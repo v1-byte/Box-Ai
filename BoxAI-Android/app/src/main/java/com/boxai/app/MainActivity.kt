@@ -28,6 +28,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
 import dev.ffmpegkit.llama.LlamaModel
@@ -163,7 +165,7 @@ class Bridge(
 
     @Volatile private var currentModel: LlamaModel? = null
     @Volatile private var currentModelPath: String? = null
-    private val engineLock = Any()
+    private val engineLock = Mutex()
 
     @JavascriptInterface fun webSearch(id: Int, query: String) {
         Thread {
@@ -213,8 +215,8 @@ class Bridge(
                 val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
                 val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
 
-                val model = synchronized(engineLock) {
-                    val path = modelFile.absolutePath
+                val path = modelFile.absolutePath
+                val model = engineLock.withLock {
                     if (currentModel != null && currentModelPath == path) {
                         currentModel!!
                     } else {
@@ -289,7 +291,7 @@ class Bridge(
 
     @JavascriptInterface fun unloadModel() {
         scope.launch(Dispatchers.Default) {
-            synchronized(engineLock) {
+            engineLock.withLock {
                 currentModel?.let { runCatching { Llama.releaseModel(it) } }
                 currentModel = null
                 currentModelPath = null
