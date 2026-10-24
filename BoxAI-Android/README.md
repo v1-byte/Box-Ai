@@ -1,20 +1,19 @@
-# Box AI — Android (tampilan utama)
+# Box AI Android — tampilan & app utama
 
-App Android native (Kotlin + WebView) yang memuat **UI utama Box AI**.
+**Version:** 0.1.0 · **applicationId:** `com.boxai.app`
 
-## Package
-`com.boxai.app`
+## Fitur UI (assets/www)
+- Chat on-device UI (history, attach file/image, pals, model aktif)
+- Models: daftar, detail, install/uninstall simulasi, rekomendasi
+- Pals: default + custom
+- Settings: tema, haptics, generasi, privacy toggles, about
+- Files: browser file lokal simulasi + catatan
 
-## Build APK
+## Build
 ```bash
 cd BoxAI-Android
-# butuh Android SDK + JDK 17
-./gradlew assembleDebug
-# output: app/build/outputs/apk/debug/app-debug.apk
+gradle assembleDebug   # atau buka di Android Studio
+# APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Atau pakai GitHub Actions: `.github/workflows/build-apk.yml`
-
-## UI
-File UI ada di `app/src/main/assets/www/` (HTML/CSS/JS + logo).
-Ini adalah **tampilan utama** yang ditampilkan saat app dibuka.
+CI: workflow `Build Box AI APK` di GitHub Actions mengunggah artifact APK.
