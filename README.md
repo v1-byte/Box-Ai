@@ -1,5 +1,10 @@
 # Box AI
 
+<p align="center">
+  <img src="assets/images/logo.png" alt="Box AI Logo" width="200"/>
+</p>
+
+
 OpenAI GPT powered free chatbot app (Box AI) in Flutter similar to ChatGPT
 
 ### [Download it from PlayStore](https://play.google.com/store/apps/details?id=me.varunon9.box_ai&hl=en_IN&gl=US&utm_source=Github)
