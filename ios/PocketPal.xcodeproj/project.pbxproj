@@ -557,7 +557,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.pocketpal;
-				PRODUCT_NAME = PocketPal;
+				PRODUCT_NAME = "Box AI";
 				PROVISIONING_PROFILE_SPECIFIER = "match Development ai.pocketpal";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "match Development ai.pocketpal";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -595,7 +595,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.pocketpal;
-				PRODUCT_NAME = PocketPal;
+				PRODUCT_NAME = "Box AI";
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore ai.pocketpal";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "match AppStore ai.pocketpal";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -1027,7 +1027,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.pocketpal;
-				PRODUCT_NAME = PocketPal;
+				PRODUCT_NAME = "Box AI";
 				PROVISIONING_PROFILE_SPECIFIER = "match Development ai.pocketpal";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "match AppStore ai.pocketpal";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

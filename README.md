@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="src/assets/pocketpal-dark-v2.png" alt="PocketPal AI logo" width="120" />
+<img src="src/assets/pocketpal-dark-v2.png" alt="Box AI logo" width="120" />
 
-# PocketPal AI
+# Box AI
 
 **A private AI assistant that runs entirely on your phone.**
 
@@ -29,9 +29,9 @@ Chat with language models, give them a voice, and let them use tools — all on-
 
 ---
 
-## Why PocketPal AI?
+## Why Box AI?
 
-Most AI apps are a thin window onto someone else's server — every message you type gets shipped off, logged, and analyzed somewhere you can't see. PocketPal flips that around: **the AI lives on your phone, and your conversations never leave it.**
+Most AI apps are a thin window onto someone else's server — every message you type gets shipped off, logged, and analyzed somewhere you can't see. Box AI flips that around: **the AI lives on your phone, and your conversations never leave it.**
 
 - **🔒 Private by default** — every prompt, response, and document stays on your device. Nothing is uploaded or stored on external servers.
 - **✈️ Works offline** — download a model once and it just works, with no connection and no account. On a plane, on a trail, anywhere.
@@ -73,18 +73,18 @@ Most AI apps are a thin window onto someone else's server — every message you 
 
 **Three steps to your first chat:**
 
-1. **Install** PocketPal from the App Store or Google Play.
+1. **Install** Box AI from the App Store or Google Play.
 2. **Download a model** — tap the menu (☰) → **Models**, pick one that fits your phone, and download (or add one from Hugging Face).
 3. **Load it and start chatting** — that's it, you're running AI fully offline.
 
 ## How it works
 
-You don't need to know any of this to use PocketPal — but if you're curious how a phone runs real AI offline, here's the short version.
+You don't need to know any of this to use Box AI — but if you're curious how a phone runs real AI offline, here's the short version.
 
-PocketPal is a four-layer stack, from the silicon up to the chat UI. Each layer has one job, and the dependency direction is strictly top-down — the JS app talks to native bridges, bridges talk to inference engines, engines target hardware backends.
+Box AI is a four-layer stack, from the silicon up to the chat UI. Each layer has one job, and the dependency direction is strictly top-down — the JS app talks to native bridges, bridges talk to inference engines, engines target hardware backends.
 
 <div align="center">
-  <img src="assets/images and logos/stack-diagram-dark.png" alt="PocketPal AI on-device stack — UI & Tool Use → Bridging → Engine → Hardware" width="100%">
+  <img src="assets/images and logos/stack-diagram-dark.png" alt="Box AI on-device stack — UI & Tool Use → Bridging → Engine → Hardware" width="100%">
 </div>
 
 | Layer | What runs here |
@@ -92,7 +92,7 @@ PocketPal is a four-layer stack, from the silicon up to the chat UI. Each layer 
 | **UI & Tool Use** | The React Native app (UI via React Native Paper, state via MobX, chat history in WatermelonDB). The **`AgentRunner`** drives each chat turn — streaming tokens, dispatching **Talents** (tools) when the model calls them, and feeding results back for follow-up reasoning. **Pals** are configurable personas; **PalsHub** is the in-app marketplace for sharing and buying them. |
 | **Bridging** | Native modules that connect JavaScript to the engines. [`llama.rn`](https://github.com/mybigday/llama.rn) bridges LLM inference over JSI; [`react-native-speech`](https://github.com/a-ghorbani/react-native-speech) and `onnxruntime-react-native` bridge text-to-speech. |
 | **Engine** | The inference engines. **llama.cpp** runs language models in the quantized **GGUF** format. **ONNX Runtime** runs TTS voice models in the **ONNX** format. |
-| **Hardware** | Where the math actually happens. PocketPal targets **CPU** (universal fallback), **GPU** (Metal on iOS, OpenCL on Qualcomm Adreno for Android), and **NPU** (Qualcomm Hexagon) — falling back gracefully and offloading partial layers when a full backend isn't available. |
+| **Hardware** | Where the math actually happens. Box AI targets **CPU** (universal fallback), **GPU** (Metal on iOS, OpenCL on Qualcomm Adreno for Android), and **NPU** (Qualcomm Hexagon) — falling back gracefully and offloading partial layers when a full backend isn't available. |
 
 ## Using the app
 
@@ -157,7 +157,7 @@ Switch personas with the Pal picker on the chat page. Browse **[PalsHub](https:/
 <br/>
 
 1. Create an access token in your Hugging Face account ([docs](https://huggingface.co/docs/hub/en/security-tokens)).
-2. In PocketPal, go to **Settings → Set Token**, paste it, and save.
+2. In Box AI, go to **Settings → Set Token**, paste it, and save.
 
 <img src="assets/images and logos/Token_in_pocketpal.png" alt="Token setup" width="66%">
 </details>
@@ -174,7 +174,7 @@ Go to **App Info → "Sharing your thoughts"**, type your feedback — feature r
 
 ## For developers
 
-PocketPal is a standard React Native app. If you can build a React Native project, you can build PocketPal.
+Box AI is a standard React Native app. If you can build a React Native project, you can build Box AI.
 
 ### Prerequisites
 
@@ -261,7 +261,7 @@ Versions are pinned in [`package.json`](package.json); the highlights:
 </details>
 
 <details>
-<summary><strong>Extending PocketPal</strong></summary>
+<summary><strong>Extending Box AI</strong></summary>
 
 <br/>
 
@@ -290,7 +290,7 @@ Contributions are welcome — bug reports, fixes, features, translations, and do
 4. Commit with [Conventional Commits](https://www.conventionalcommits.org/): `git commit -m "feat: add new talent"`
 5. Push and open a pull request.
 
-Please read the [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) first. Want to translate PocketPal into your language? Join us on [Weblate](https://hosted.weblate.org/projects/pocketpal-ai/).
+Please read the [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) first. Want to translate Box AI into your language? Join us on [Weblate](https://hosted.weblate.org/projects/pocketpal-ai/).
 
 ## Roadmap
 
@@ -303,7 +303,7 @@ Have an idea or found a bug? [Open an issue](https://github.com/a-ghorbani/pocke
 - 💬 **Questions & ideas** — [GitHub Discussions](https://github.com/a-ghorbani/pocketpal-ai/discussions)
 - 🐛 **Bugs & requests** — [GitHub Issues](https://github.com/a-ghorbani/pocketpal-ai/issues/new/choose)
 - 🌐 **Website** — [pocketpal.dev](https://pocketpal.dev/)
-- ❤️ **Support development** — PocketPal is free and ad-free; [sponsoring](https://github.com/sponsors/a-ghorbani) helps keep it that way.
+- ❤️ **Support development** — Box AI is free and ad-free; [sponsoring](https://github.com/sponsors/a-ghorbani) helps keep it that way.
 
 ## License
 
@@ -311,7 +311,7 @@ Licensed under the [MIT License](LICENSE).
 
 ## Acknowledgements
 
-PocketPal AI stands on the shoulders of the open-source community, including:
+Box AI stands on the shoulders of the open-source community, including:
 
 - **[llama.cpp](https://github.com/ggerganov/llama.cpp)** — efficient on-device LLM inference.
 - **[llama.rn](https://github.com/mybigday/llama.rn)** — llama.cpp bindings for React Native.
@@ -326,6 +326,6 @@ Made with ❤️ for people who want AI that stays on their phone.
 
 <br/>
 
-<sub>If PocketPal is useful to you, consider giving it a ⭐ — it helps others find the project.</sub>
+<sub>If Box AI is useful to you, consider giving it a ⭐ — it helps others find the project.</sub>
 
 </div>
