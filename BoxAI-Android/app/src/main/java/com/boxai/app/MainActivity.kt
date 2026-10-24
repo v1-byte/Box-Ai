@@ -25,10 +25,15 @@ import android.webkit.JavascriptInterface
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.*
+import dev.ffmpegkit.llama.Llama
+import dev.ffmpegkit.llama.LlamaConfig
+import dev.ffmpegkit.llama.LlamaModel
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,7 +43,6 @@ class MainActivity : AppCompatActivity() {
         webView = WebView(this).apply { setBackgroundColor(Color.parseColor("#08090C")) }
         setContentView(webView)
 
-        // Padding sesuai status bar / navigation bar / keyboard
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime()
@@ -47,7 +51,6 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsCompat.CONSUMED
         }
 
-        // Muat file lokal dari assets lewat https://appassets.androidplatform.net
         val loader = WebViewAssetLoader.Builder()
             .setDomain("appassets.androidplatform.net")
             .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -55,14 +58,17 @@ class MainActivity : AppCompatActivity() {
 
         webView.settings.apply {
             javaScriptEnabled = true
-            domStorageEnabled = true            // localStorage dipakai app.js
+            domStorageEnabled = true
             allowFileAccess = false
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             textZoom = 100
         }
 
-        webView.addJavascriptInterface(Bridge(this) { js -> runOnUiThread { webView.evaluateJavascript(js, null) } }, "BoxNative")
+        webView.addJavascriptInterface(
+            Bridge(this, scope) { js -> runOnUiThread { webView.evaluateJavascript(js, null) } },
+            "BoxNative"
+        )
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
@@ -71,7 +77,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (request.url.host == "appassets.androidplatform.net") return false
-                startActivity(Intent(Intent.ACTION_VIEW, request.url))  // link luar -> browser
+                startActivity(Intent(Intent.ACTION_VIEW, request.url))
                 return true
             }
         }
@@ -98,13 +104,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        scope.cancel()
         webView.destroy()
         super.onDestroy()
     }
 }
 
-/** Jembatan JS <-> Android: unduhan model nyata, file, info perangkat. */
-class Bridge(private val ctx: Context, private val post: (String) -> Unit) {
+/** Jembatan JS <-> Android: unduhan model, file, info perangkat, dan mesin LLM (llama.cpp). */
+class Bridge(
+    private val ctx: Context,
+    private val scope: CoroutineScope,
+    private val post: (String) -> Unit
+) {
     private val dm get() = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun dir(): File = (ctx.getExternalFilesDir("models") ?: File(ctx.filesDir, "models")).also { it.mkdirs() }
     private fun safe(n: String) = n.isNotBlank() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
@@ -112,7 +123,12 @@ class Bridge(private val ctx: Context, private val post: (String) -> Unit) {
     private fun clean(s: String) = s.replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&quot;", "\"")
         .replace("&#x27;", "'").replace("&lt;", "<").replace("&gt;", ">").trim()
 
-    /** Pencarian web (DuckDuckGo, tanpa API key). Hasil dikirim async ke window.BoxSearch.cb(id, {...}). */
+    // ── LLM engine state ──────────────────────────────────────────────
+    @Volatile private var currentModel: LlamaModel? = null
+    @Volatile private var currentModelPath: String? = null
+    private val engineLock = Any()
+
+    /** Pencarian web (DuckDuckGo, tanpa API key). */
     @JavascriptInterface fun webSearch(id: Int, query: String) {
         Thread {
             val out = JSONObject().put("results", JSONArray())
@@ -138,9 +154,124 @@ class Bridge(private val ctx: Context, private val post: (String) -> Unit) {
         }.start()
     }
 
-    /** Ganti ke true setelah mesin llama.cpp (JNI) dipasang. */
-    @JavascriptInterface fun engineAvailable(): Boolean = false
-    @JavascriptInterface fun generate(json: String) { /* hook llama.cpp: panggil BoxEngine.token/done/error di JS */ }
+    /** Mesin LLM tersedia (llama.cpp via llama-android). */
+    @JavascriptInterface fun engineAvailable(): Boolean = true
+
+    /**
+     * Generate jawaban dari model.
+     * JSON input: { model, messages: [{role,content}], temp, top_p, max_tokens, n_ctx }
+     * Streaming ke JS lewat window.BoxEngine.token / done / error
+     */
+    @JavascriptInterface fun generate(json: String) {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val o = JSONObject(json)
+                val modelName = o.optString("model", "")
+                if (modelName.isBlank() || !safe(modelName)) {
+                    post("window.BoxEngine&&BoxEngine.error('Model tidak valid')")
+                    return@launch
+                }
+                val modelFile = File(dir(), modelName)
+                if (!modelFile.exists()) {
+                    post("window.BoxEngine&&BoxEngine.error('File model tidak ditemukan: $modelName')")
+                    return@launch
+                }
+
+                val nCtx = o.optInt("n_ctx", 2048).coerceIn(512, 8192)
+                val maxTok = o.optInt("max_tokens", 512).coerceIn(16, 4096)
+                val temp = o.optDouble("temp", 0.7).toFloat().coerceIn(0f, 2f)
+                val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
+                val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+
+                // Load / reuse model
+                val model = synchronized(engineLock) {
+                    val path = modelFile.absolutePath
+                    if (currentModel != null && currentModelPath == path) {
+                        currentModel!!
+                    } else {
+                        currentModel?.let { runCatching { Llama.releaseModel(it) } }
+                        currentModel = null
+                        currentModelPath = null
+                        val cfg = LlamaConfig(
+                            contextSize = nCtx,
+                            threads = threads,
+                            temperature = temp,
+                            topP = topP,
+                        )
+                        val m = Llama.loadModel(path, cfg)
+                        currentModel = m
+                        currentModelPath = path
+                        m
+                    }
+                }
+
+                // Build prompt dari messages
+                val messages = o.optJSONArray("messages") ?: JSONArray()
+                var systemPrompt = ""
+                val userParts = mutableListOf<String>()
+                for (i in 0 until messages.length()) {
+                    val m = messages.getJSONObject(i)
+                    val role = m.optString("role", "")
+                    val content = m.optString("content", "")
+                    when (role) {
+                        "system" -> systemPrompt = content
+                        "user" -> userParts.add(content)
+                        "assistant" -> userParts.add("Assistant: $content")
+                    }
+                }
+                val prompt = userParts.lastOrNull() ?: ""
+                // Include short history for context
+                val history = if (userParts.size > 1) {
+                    userParts.dropLast(1).takeLast(4).joinToString("\n")
+                } else ""
+                val fullPrompt = if (history.isNotBlank()) "$history\n$prompt" else prompt
+
+                val result = Llama.complete(
+                    model,
+                    prompt = fullPrompt,
+                    systemPrompt = systemPrompt.ifBlank { "You are Box AI, a helpful private on-device assistant. Answer in the same language as the user." },
+                    maxTokens = maxTok,
+                )
+
+                // Simulate streaming for better UX (free version has no real stream)
+                val text = result.text.trim()
+                if (text.isEmpty()) {
+                    post("window.BoxEngine&&BoxEngine.error('Model tidak menghasilkan jawaban')")
+                    return@launch
+                }
+                val chunkSize = 8
+                var i = 0
+                while (i < text.length) {
+                    val end = minOf(i + chunkSize, text.length)
+                    val chunk = text.substring(i, end)
+                    // Escape for JS string
+                    val esc = chunk
+                        .replace("\\", "\\\\")
+                        .replace("'", "\\'")
+                        .replace("\n", "\\n")
+                        .replace("\r", "")
+                    post("window.BoxEngine&&BoxEngine.token('$esc')")
+                    delay(12)
+                    i = end
+                }
+                post("window.BoxEngine&&BoxEngine.done()")
+            } catch (e: Exception) {
+                val msg = (e.message ?: "unknown").replace("'", "\\'").replace("\n", " ")
+                post("window.BoxEngine&&BoxEngine.error('$msg')")
+            }
+        }
+    }
+
+    /** Unload model dari memori (panggil dari Settings jika perlu). */
+    @JavascriptInterface fun unloadModel() {
+        scope.launch(Dispatchers.Default) {
+            synchronized(engineLock) {
+                currentModel?.let { runCatching { Llama.releaseModel(it) } }
+                currentModel = null
+                currentModelPath = null
+            }
+        }
+    }
 
     private fun activeNames(): Set<String> {
         val out = HashSet<String>()
@@ -220,6 +351,7 @@ class Bridge(private val ctx: Context, private val post: (String) -> Unit) {
             .put("ram", mi.totalMem).put("ramFree", mi.availMem)
             .put("free", st.availableBytes).put("total", st.totalBytes)
             .put("cache", ctx.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() })
+            .put("engine", "llama.cpp (llama-android 0.1.1)")
             .toString()
     }
 }
