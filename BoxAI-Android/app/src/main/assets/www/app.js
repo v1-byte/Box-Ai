@@ -4,38 +4,30 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
+  const NATIVE = window.BoxNative || null;
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   /* ================= DATA & STATE ================= */
-  const MODELS = [
-    { id: 'gemma',   name: 'Gemma 2 2B Instruct',   short: 'Gemma 2 2B',   meta: '2,6B · Q4',  gb: 1.7, src: 'bundled' },
-    { id: 'llama',   name: 'Llama 3.2 3B Instruct', short: 'Llama 3.2 3B', meta: '3,2B · Q4',  gb: 2.0, src: 'hub' },
-    { id: 'phi',     name: 'Phi-3 Mini 4K',         short: 'Phi-3 Mini',   meta: '3,8B · Q4',  gb: 2.2, src: 'hub' },
-    { id: 'mistral', name: 'Mistral Nemo 12B',      short: 'Mistral Nemo', meta: '12B · Q4',   gb: 7.1, src: 'hub' },
-    { id: 'qwen',    name: 'Qwen2.5 7B Instruct',   short: 'Qwen2.5 7B',   meta: '7B · Q4',    gb: 4.4, src: 'hub' }
-  ];
+  const MODELS = [];
   const DEFAULT_PALS = [
     { id: 'chat',     name: 'Default Chat', desc: 'Asisten umum', icon: 'chat',   prompt: 'Kamu asisten yang membantu, ringkas, dan jujur.' },
     { id: 'writer',   name: 'Writer',       desc: 'Draf, tulis ulang, atur nada', icon: 'pen', prompt: 'Kamu penulis profesional. Bantu menyusun dan memperbaiki tulisan.' },
     { id: 'coder',    name: 'Coder',        desc: 'Jelaskan dan refaktor kode offline', icon: 'code', prompt: 'Kamu insinyur perangkat lunak senior. Jawab dengan kode yang rapi.' },
     { id: 'research', name: 'Research',     desc: 'Ringkas catatan dan PDF panjang', icon: 'search', prompt: 'Kamu asisten riset. Ringkas dan tarik poin penting dari dokumen.' }
   ];
-  const SEED_CHAT = [
-    { r: 'ai', h: '<p>Halo, saya <strong>Box AI</strong>. Semua berjalan di perangkatmu: tanpa cloud, tanpa akun untuk model lokal.</p><p class="muted-line">Tanya apa saja, lampirkan file, atau ganti model dari tab Models.</p>' },
-    { r: 'user', t: 'Apa saja yang bisa kamu lakukan secara offline?' },
-    { r: 'ai', h: '<ul><li>Chat dengan LLM yang sudah diunduh (Llama, Phi, Gemma, Mistral)</li><li>Pals multimodal: gambar dan suara di model yang mendukung</li><li>Konteks dokumen langsung di perangkat</li><li>Benchmark dan atur sampler</li></ul>' }
-  ];
+  const SEED_CHAT = [];
   const DEFAULTS = {
     theme: 'system', lang: 'id', haptics: true, onDevice: true,
     temp: 0.7, topp: 0.9, maxTok: 2048, ctx: 4096,
-    active: 'gemma', dl: { gemma: true }, pal: null, pals: [],
-    cache: { kv: 312, tmp: 148, thumbs: 86, logs: 24 },
-    chat: SEED_CHAT, typing: true, sort: 'default'
+    active: '', dl: {}, pal: null, pals: [],
+    cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
+    chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
   };
   let S;
-  try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v2') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
-  const save = () => { try { localStorage.setItem('boxai.v2', JSON.stringify(S)); } catch (e) {} };
-  const model = id => MODELS.find(m => m.id === id);
+  try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
+  const save = () => { try { localStorage.setItem('boxai.v3', JSON.stringify(S)); } catch (e) {} };
+  const NONE = { id: '', name: 'Belum ada model', short: 'Belum ada model', meta: '', gb: 0, src: '', file: '' };
+  const model = id => MODELS.find(m => m.id === id) || NONE;
   const fmtMB = mb => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB').replace('.', ',');
   const fmtGB = gb => (gb.toFixed(1) + ' GB').replace('.', ',');
   const allPals = () => DEFAULT_PALS.concat(S.pals);
@@ -49,13 +41,7 @@
     mistral: '[INST] {{prompt}} [/INST]',
     phi3: '<|user|>\n{{prompt}}<|end|>\n<|assistant|>\n'
   };
-  const MMETA_DEF = {
-    gemma:   { file: 'gemma-2-2b-it-Q4_K_M.gguf',            arch: 'gemma2',  quant: 'Q4_K_M', ctx: 8192,   tpl: 'gemma',   tensors: 288, kv: 32 },
-    llama:   { file: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',    arch: 'llama',   quant: 'Q4_K_M', ctx: 131072, tpl: 'llama3',  tensors: 255, kv: 30 },
-    phi:     { file: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',   arch: 'phi3',    quant: 'Q4_K_M', ctx: 4096,   tpl: 'phi3',    tensors: 195, kv: 28 },
-    mistral: { file: 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf', arch: 'llama', quant: 'Q4_K_M', ctx: 131072, tpl: 'mistral', tensors: 363, kv: 34 },
-    qwen:    { file: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',      arch: 'qwen2',   quant: 'Q4_K_M', ctx: 32768,  tpl: 'chatml',  tensors: 339, kv: 33 }
-  };
+  const MMETA_DEF = {};
   function seedFs() {
     const t = Date.now();
     return {
@@ -63,7 +49,7 @@
       files: {
         [ROOT + '/prompts/default.txt']: { c: 'Kamu asisten yang membantu, ringkas, dan jujur.\nJawab dalam bahasa yang dipakai pengguna.\n', m: t },
         [ROOT + '/prompts/penulis.txt']: { c: 'Kamu penulis profesional.\nPerbaiki tata bahasa, jaga nada asli penulis, dan jelaskan perubahan penting secara singkat.\n', m: t },
-        [ROOT + '/catatan/catatan-model.md']: { c: '# Catatan model\n\n- Gemma 2 2B: cepat untuk chat harian.\n- Tambahkan catatanmu di sini.\n', m: t }
+        [ROOT + '/catatan/catatan-model.md']: { c: '# Catatan model\n\n- Catat model favoritmu di sini.\n- Tambahkan catatanmu di sini.\n', m: t }
       }
     };
   }
@@ -166,9 +152,10 @@
     if (name === 'settings') renderSettings();
     if (name === 'clean') enterCleaner();
     if (name === 'finder') renderFinder();
+    if (name === 'bench') renderBench();
   }
   $$('[data-go]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); go(el.dataset.go); }));
-  $('#btnMenu').addEventListener('click', () => go('gallery'));
+  $('#btnMenu').addEventListener('click', () => go('settings'));
 
   /* ================= SPLASH ================= */
   const splash = $('#splash'), bar = $('#bootBar'), bootText = $('#bootText');
@@ -182,10 +169,10 @@
   /* ================= CHAT ================= */
   const messages = $('#messages'), input = $('#composerInput'), sendBtn = $('#btnSend');
   let attachment = null;
-  const subText = () => (S.pal ? (allPals().find(p => p.id === S.pal) || {}).name + ' · ' : '') + model(S.active).short + ' · ' + (S.onDevice ? 'On-device' : 'Online');
+  const subText = () => (S.pal ? (allPals().find(p => p.id === S.pal) || {}).name + ' · ' : '') + model(S.active).short + ' · ' + (S.onDevice ? 'On-device' : 'Online') + (S.web ? ' + Web' : '');
   function updateTop() { $('#chatSub').textContent = subText(); }
   function aiRow(inner) {
-    return `<div class="row ai"><img src="assets/logo-64.png" class="av" alt="" width="30" height="30" /><div class="bubble">${inner}</div></div>`;
+    return `<div class="row ai"><img src="assets/logo-64.webp" class="av" alt="" width="30" height="30" /><div class="bubble">${inner}</div></div>`;
   }
   function renderChat() {
     let h = '<div class="day-sep"><span>Hari ini</span></div>';
@@ -199,20 +186,120 @@
         else h += `<div class="row user"><div class="bubble">${m.f ? `<div class="file-bubble">${ic('file')}${esc(m.f)}</div>` : ''}${esc(m.t)}</div></div>`;
       });
     }
-    if (S.typing && S.chat.length) h += `<div class="row ai" id="typingRow"><img src="assets/logo-64.png" class="av" alt="" width="30" height="30" /><div class="bubble typing" aria-label="Sedang mengetik"><i></i><i></i><i></i></div></div>`;
+    if (S.typing && S.chat.length) h += `<div class="row ai" id="typingRow"><img src="assets/logo-64.webp" class="av" alt="" width="30" height="30" /><div class="bubble typing" aria-label="Sedang mengetik"><i></i><i></i><i></i></div></div>`;
     messages.innerHTML = h;
     $$('.suggest button', messages).forEach(b => b.addEventListener('click', () => { input.value = b.textContent + ': '; input.focus(); sendBtn.classList.add('ready'); }));
     messages.scrollTop = messages.scrollHeight;
   }
+
+  /* ================= TALENTS, MARKDOWN, ENGINE ================= */
+  const searchCbs = {}; let searchN = 0;
+  window.BoxSearch = { cb: (id, r) => { const f = searchCbs[id]; if (f) { delete searchCbs[id]; f(r); } } };
+  function webSearch(q) {
+    return new Promise((res, rej) => {
+      if (!NATIVE || !NATIVE.webSearch) return rej(new Error('Pencarian web hanya tersedia di aplikasi Android'));
+      if (!q.trim()) return rej(new Error('Kueri kosong'));
+      const id = ++searchN, t = setTimeout(() => { delete searchCbs[id]; rej(new Error('Pencarian kehabisan waktu')); }, 20000);
+      searchCbs[id] = r => { clearTimeout(t); r.error ? rej(new Error(r.error)) : res(r.results || []); };
+      NATIVE.webSearch(id, q);
+    });
+  }
+  const TALENTS = {
+    calculate: { desc: 'Hitung ekspresi matematika', run: a => { const e = String(a.expression || ''); if (!/^[0-9+\-*\/%^().,\s]+$/.test(e)) throw new Error('Ekspresi tidak valid'); const v = Function('"use strict";return (' + e.replace(/\^/g, '**').replace(/,/g, '.') + ')')(); if (!Number.isFinite(v)) throw new Error('Hasil tidak terhingga'); return String(v); } },
+    datetime: { desc: 'Tanggal dan waktu saat ini', run: () => new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'long' }) },
+    web_search: { desc: 'Cari informasi di web lewat DuckDuckGo (kueri dikirim ke internet)', run: async a => { const r = await webSearch(String(a.query || '')); return r.length ? r.map((x, i) => (i + 1) + '. ' + x.title + '\n' + x.url + '\n' + x.snippet).join('\n\n') : 'Tidak ada hasil.'; } },
+    render_html: { desc: 'Tampilkan HTML di dalam chat', run: a => String(a.html || '') }
+  };
+  function runTalent(name, args) {
+    if (!TALENTS[name]) throw new Error('Talent tidak dikenal: ' + name);
+    if (name === 'web_search' ? !S.web : !S.talents[name]) throw new Error(name === 'web_search' ? 'Pencarian web mati. Nyalakan tombol globe di samping kolom pesan.' : 'Talent ' + name + ' dimatikan di Settings');
+    return TALENTS[name].run(args || {});
+  }
+  const htmlFrame = code => S.talents.render_html ? `<iframe class="html-frame" sandbox="" srcdoc="${esc(code)}"></iframe>` : `<pre><code>${esc(code)}</code></pre>`;
+  function md(t) {
+    const parts = String(t).split(/```/);
+    return parts.map((p, i) => {
+      if (i % 2) {
+        const nl = p.indexOf('\n'), lang = nl > -1 ? p.slice(0, nl).trim().toLowerCase() : '', code = nl > -1 ? p.slice(nl + 1) : p;
+        return lang === 'html' && S.talents.render_html ? htmlFrame(code) : `<pre><button type="button" class="cp">Salin</button><code>${esc(code.replace(/\n$/, ''))}</code></pre>`;
+      }
+      return esc(p).split(/\n{2,}/).filter(x => x.trim()).map(x => '<p>' + x.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>') + '</p>').join('');
+    }).join('');
+  }
+  messages.addEventListener('click', e => {
+    const b = e.target.closest('.cp'); if (!b) return;
+    const code = $('code', b.parentNode).textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast('Kode disalin'), () => toast('Gagal menyalin'));
+  });
+  const Engine = {
+    ok: () => !!(NATIVE && NATIVE.engineAvailable && NATIVE.engineAvailable()),
+    generate(msgs) {
+      return new Promise((res, rej) => {
+        let buf = '';
+        window.BoxEngine = { token: t => { buf += t; live(buf); }, done: () => res(buf), error: m => rej(new Error(m)) };
+        NATIVE.generate(JSON.stringify({ model: meta(S.active).file, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx }));
+      });
+    }
+  };
+  function live(t) {
+    let r = $('#liveRow');
+    if (!r) { messages.insertAdjacentHTML('beforeend', aiRow('').replace('class="row ai"', 'class="row ai" id="liveRow"')); r = $('#liveRow'); }
+    $('.bubble', r).innerHTML = md(t); messages.scrollTop = messages.scrollHeight;
+  }
+  const pushAi = (h, raw) => { S.chat.push({ r: 'ai', h, raw }); save(); renderChat(); };
+  function sysPrompt() {
+    const pal = allPals().find(p => p.id === S.pal), tools = Object.keys(TALENTS).filter(k => (k === 'web_search' ? S.web : S.talents[k]) && k !== 'render_html');
+    return (pal ? pal.prompt : (S.sysPrompt || meta(S.active).sys)) + (tools.length ? '\nTools: ' + tools.map(k => k + ' (' + TALENTS[k].desc + ')').join(', ') + '. Panggil dengan <tool>{"name":"...","args":{...}}</tool>.' : '');
+  }
+  async function agentTurn(depth) {
+    const msgs = [{ role: 'system', content: sysPrompt() }].concat(S.chat.map(m => m.r === 'ai' ? { role: 'assistant', content: m.raw || m.h.replace(/<[^>]+>/g, '') } : { role: 'user', content: m.t }));
+    let srcs = [];
+    if (S.web && depth === 0) {
+      const lastU = S.chat.slice().reverse().find(m => m.r === 'user');
+      if (lastU) {
+        live('Mencari di web…');
+        try { srcs = await webSearch(lastU.t.slice(0, 200)); } catch (e) { srcs = []; toast(e.message); }
+        const lr = $('#liveRow'); lr && lr.remove();
+      }
+      if (srcs.length) msgs[0].content += '\n\nHasil pencarian web terbaru (gunakan bila relevan dan sebutkan sumbernya):\n' + srcs.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' — ' + x.snippet + ' (' + x.url + ')').join('\n');
+    }
+    let out;
+    try { out = await Engine.generate(msgs); } catch (e) { const r = $('#liveRow'); r && r.remove(); return pushAi('<p>Gagal membuat jawaban: ' + esc(e.message) + '</p>'); }
+    const r = $('#liveRow'); r && r.remove();
+    const tc = out.match(/<tool>([\s\S]*?)<\/tool>/);
+    if (tc && depth < 3) {
+      let res;
+      try { const c = JSON.parse(tc[1]); res = await runTalent(c.name, c.args); pushAi('<p class="muted-line">Talent ' + esc(c.name) + ' → ' + esc(String(res).slice(0, 200)) + '</p>', out + '\n[hasil tool: ' + res + ']'); }
+      catch (e) { pushAi('<p class="muted-line">Talent gagal: ' + esc(e.message) + '</p>', out + '\n[tool error]'); }
+      return agentTurn(depth + 1);
+    }
+    pushAi(md(out) + (srcs.length ? '<p class="muted-line">Sumber: ' + srcs.map((x, i) => '<a href="' + esc(x.url) + '">[' + (i + 1) + '] ' + esc(x.title.slice(0, 40)) + '</a>').join(' · ') + '</p>' : ''), out);
+  }
+  async function reply(text) {
+    let m;
+    if ((m = text.match(/^\/calc\s+(.+)/i))) { try { return pushAi('<p>' + esc(m[1]) + ' = <strong>' + esc(runTalent('calculate', { expression: m[1] })) + '</strong></p>'); } catch (e) { return pushAi('<p>' + esc(e.message) + '</p>'); } }
+    if (/^\/waktu/i.test(text)) { try { return pushAi('<p>' + esc(runTalent('datetime')) + '</p>'); } catch (e) { return pushAi('<p>' + esc(e.message) + '</p>'); } }
+    if ((m = text.match(/^\/cari\s+(.+)/i))) {
+      try {
+        const r = await runTalent('web_search', { query: m[1] });
+        return pushAi('<p><strong>Hasil untuk “' + esc(m[1]) + '”</strong></p>' + r.split('\n\n').map(b => { const [t, u, ...s] = b.split('\n'); return u ? '<p><a href="' + esc(u) + '">' + esc(t.replace(/^\d+\.\s/, '')) + '</a><br><span class="muted-line">' + esc(s.join(' ')) + '</span></p>' : '<p>' + esc(t) + '</p>'; }).join(''));
+      } catch (e) { return pushAi('<p>' + esc(e.message) + '</p>'); }
+    }
+    if ((m = text.match(/^\/html\s+([\s\S]+)/i))) return pushAi(htmlFrame(m[1]));
+    if (!Engine.ok()) return pushAi('<p>Mesin inferensi on-device belum terpasang di build ini, jadi belum ada jawaban AI.</p><p class="muted-line">Perintah lokal tetap jalan: /calc 2+2, /waktu, /cari &lt;kata&gt;, /html &lt;kode&gt;.</p>');
+    if (!S.active) return pushAi('<p>Belum ada model aktif. Unduh atau pilih model di tab Models.</p>');
+    await agentTurn(0);
+  }
+
   function send() {
     const text = (input.value || '').trim();
     if (!text && !attachment) return;
     S.typing = false;
     S.chat.push({ r: 'user', t: text || '(lampiran)', f: attachment ? attachment.name : undefined });
-    S.cache.kv += 1.5;
+    input.value = ''; sendBtn.classList.remove('ready'); clearAttachment();
     save(); renderChat();
     const us = $$('.row.user', messages), last = us[us.length - 1]; last && last.classList.add('pop');
-    input.value = ''; sendBtn.classList.remove('ready'); clearAttachment();
+    reply(text);
   }
   sendBtn.addEventListener('click', send);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
@@ -225,6 +312,17 @@
   $('#btnNew').addEventListener('click', async () => {
     if (S.chat.length && !(await confirmBox('Mulai chat baru?', 'Percakapan saat ini akan dihapus dari layar dan riwayat.', 'Chat baru', false))) return;
     newChat();
+  });
+
+  /* tombol pencarian web */
+  const btnWeb = $('#btnWeb');
+  function applyWeb() { btnWeb.classList.toggle('on', !!S.web); btnWeb.setAttribute('aria-pressed', String(!!S.web)); updateTop(); }
+  btnWeb.addEventListener('click', async () => {
+    if (!S.web && !S.webAck) {
+      if (!(await confirmBox('Nyalakan pencarian web?', 'Kata kunci dari pesanmu dikirim ke DuckDuckGo agar jawaban lebih akurat. Model tetap berjalan di perangkat. Matikan kapan saja lewat tombol globe.', 'Nyalakan', false))) return;
+      S.webAck = true;
+    }
+    S.web = !S.web; save(); applyWeb(); toast(S.web ? 'Pencarian web aktif' : 'Pencarian web mati');
   });
 
   /* lampiran */
@@ -254,6 +352,65 @@
   /* ================= MODELS ================= */
   let filter = 'all';
   const dlProg = {};
+  const QRE = /(IQ\d_[A-Z0-9_]+|Q\d_[A-Z0-9_]+|BF16|F16|F32)/i;
+  const modelId = f => 'm_' + f.replace(/[^a-z0-9]/gi, '_');
+  const fmtN = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' jt' : n >= 1e3 ? Math.round(n / 1e3) + ' rb' : String(n || 0);
+  function reg(file, size, src, url) {
+    const id = modelId(file); let m = MODELS.find(x => x.id === id);
+    if (!m) {
+      const q = (file.match(QRE) || ['GGUF'])[0].toUpperCase(), stem = file.replace(/\.gguf$/i, '');
+      m = { id, name: stem, short: stem.length > 22 ? stem.slice(0, 21) + '…' : stem, meta: q, gb: size / 1073741824, src, url, file };
+      MMETA_DEF[id] = { file, arch: 'GGUF', quant: q, ctx: 4096, tpl: 'chatml' };
+      MODELS.push(m);
+    } else { if (size) m.gb = size / 1073741824; if (url && !m.url) m.url = url; }
+    return m;
+  }
+  function syncLocal() {
+    if (!NATIVE) return;
+    let a = []; try { a = JSON.parse(NATIVE.listModels()); } catch (e) { }
+    const have = new Set(a.map(f => modelId(f.name)));
+    a.forEach(f => { reg(f.name, f.size, 'local'); S.dl[modelId(f.name)] = true; });
+    for (let i = MODELS.length - 1; i >= 0; i--) {
+      const m = MODELS[i];
+      if (!have.has(m.id)) { delete S.dl[m.id]; if (dlProg[m.id] == null && m.src !== 'hub') MODELS.splice(i, 1); }
+    }
+    if (S.active && !have.has(S.active)) S.active = '';
+    save();
+  }
+  const nativeInfo = () => { try { return JSON.parse(NATIVE.info()); } catch (e) { return {}; } };
+  const cacheMB = () => (nativeInfo().cache || 0) / 1048576;
+  /* ---- Hugging Face Hub ---- */
+  let hubLoaded = false, hubT;
+  const hfHead = () => S.hfToken ? { Authorization: 'Bearer ' + S.hfToken } : {};
+  async function hfSearch(q) {
+    hubLoaded = true; const L = $('#hubList'); L.innerHTML = '<p class="empty">Mencari…</p>';
+    try {
+      const r = await fetch('https://huggingface.co/api/models?filter=gguf&sort=downloads&direction=-1&limit=20&search=' + encodeURIComponent(q), { headers: hfHead() });
+      if (!r.ok) throw new Error(r.status);
+      const a = await r.json();
+      L.innerHTML = a.length ? a.map(x => `<article class="model-card" data-repo="${esc(x.id)}"><div class="m-ico">${ic('cube')}</div><div class="model-info"><strong>${esc(x.id.split('/')[1] || x.id)}</strong><span>${esc(x.id.split('/')[0])} · ${fmtN(x.downloads)} unduhan · ${fmtN(x.likes)} suka</span></div>${ic('chev', 'chev')}</article>`).join('') : '<p class="empty">Tidak ada hasil.</p>';
+    } catch (e) { hubLoaded = false; L.innerHTML = '<p class="empty">Gagal memuat Hugging Face. Periksa koneksi internet.</p>'; }
+  }
+  async function hfRepo(repo) {
+    let files;
+    try {
+      const r = await fetch('https://huggingface.co/api/models/' + repo + '/tree/main', { headers: hfHead() });
+      if (r.status === 401 || r.status === 403) return toast('Model gated. Isi token Hugging Face di Settings.');
+      if (!r.ok) throw new Error(r.status);
+      files = (await r.json()).filter(f => f.type === 'file' && /\.gguf$/i.test(f.path)).sort((a, b) => a.size - b.size);
+    } catch (e) { return toast('Gagal membaca daftar file'); }
+    if (!files.length) return toast('Repo ini tidak punya file GGUF');
+    const v = await openSheet(`<h2>${esc(repo.split('/')[1] || repo)}</h2><p class="sub">Pilih kuantisasi. Q4_K_M biasanya seimbang.</p>` +
+      files.map((f, i) => `<button class="opt" data-v="${i}"><span class="o-txt">${esc(f.path.split('/').pop())}<small>${fmtGB(f.size / 1073741824)}</small></span>${ic('down')}</button>`).join('') + '<button class="btn ghost" data-close>Tutup</button>',
+      (el, close) => $$('.opt', el).forEach(b => b.addEventListener('click', () => close(b.dataset.v))));
+    if (v == null) return;
+    const f = files[+v], name = f.path.split('/').pop(), m = reg(name, f.size, 'hub', 'https://huggingface.co/' + repo + '/resolve/main/' + encodeURI(f.path));
+    if (S.dl[m.id]) return toast('Model ini sudah ada di perangkat');
+    startDownload(m.id);
+  }
+  $('#hubList').addEventListener('click', e => { const c = e.target.closest('.model-card'); if (c) hfRepo(c.dataset.repo); });
+  $('#hfq').addEventListener('input', e => { clearTimeout(hubT); hubT = setTimeout(() => hfSearch(e.target.value.trim()), 450); });
+
   function modelCard(m) {
     const has = !!S.dl[m.id], act = S.active === m.id, prog = dlProg[m.id];
     let right;
@@ -265,15 +422,17 @@
       <div class="model-info"><strong>${esc(mname(m))}</strong><span>${m.meta} · ${fmtGB(m.gb)}</span></div>${right}</article>`;
   }
   function renderModels() {
+    const hub = filter === 'hub';
+    $('#hfBox').hidden = !hub; $('#hubList').hidden = !hub; $('#modelList').hidden = hub;
+    if (hub) { if (!hubLoaded) hfSearch(''); return; }
     let list = MODELS.slice();
     if (S.sort === 'size') list.sort((a, b) => a.gb - b.gb); else if (S.sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
     if (filter === 'dl') list = list.filter(m => S.dl[m.id]);
-    if (filter === 'hub') list = list.filter(m => m.src === 'hub');
-    const ready = list.filter(m => S.dl[m.id]), avail = list.filter(m => !S.dl[m.id]);
+        const ready = list.filter(m => S.dl[m.id]), avail = list.filter(m => !S.dl[m.id]);
     let h = '';
     if (ready.length) h += '<h3 class="section-h">Siap di perangkat</h3>' + ready.map(modelCard).join('');
     if (avail.length) h += '<h3 class="section-h">Tersedia</h3>' + avail.map(modelCard).join('');
-    if (!h) h = '<p class="empty">Belum ada model yang cocok dengan filter ini.</p>';
+    if (!h) h = '<p class="empty">Belum ada model. Buka HF Hub untuk mencari dan mengunduh model GGUF.</p>';
     $('#modelList').innerHTML = h;
   }
   $$('.chip').forEach(c => c.addEventListener('click', () => {
@@ -281,15 +440,18 @@
     filter = c.dataset.f; renderModels();
   }));
   function startDownload(id) {
-    if (dlProg[id] != null || S.dl[id]) return;
-    dlProg[id] = 0; renderModels(); toast('Mengunduh ' + model(id).short);
+    const m = model(id);
+    if (!NATIVE) return toast('Unduhan hanya tersedia di aplikasi Android');
+    if (dlProg[id] != null || S.dl[id] || !m.url) return;
+    const did = NATIVE.startDownload(m.url, m.file, S.hfToken || '');
+    if (did < 0) return toast('Nama file tidak valid');
+    dlProg[id] = 0; renderModels(); toast('Mengunduh ' + m.short);
     const t = setInterval(() => {
-      dlProg[id] += 2 + Math.random() * 5;
-      if (dlProg[id] >= 100) {
-        clearInterval(t); delete dlProg[id]; S.dl[id] = true; S.cache.tmp += 30; save();
-        renderModels(); renderSettings(); toast(model(id).short + ' siap dipakai');
-      } else { const b = $(`.model-card[data-id="${id}"] .btn-dl`); b && b.style.setProperty('--p', dlProg[id]); }
-    }, 120);
+      let s = {}; try { s = JSON.parse(NATIVE.status(did)); } catch (e) { }
+      if (s.s === 8) { clearInterval(t); delete dlProg[id]; syncLocal(); renderModels(); renderSettings(); toast(m.short + ' siap dipakai'); }
+      else if (s.s === 16 || s.s === 0) { clearInterval(t); delete dlProg[id]; syncLocal(); renderModels(); toast('Unduhan gagal. Periksa koneksi atau token HF untuk model gated.'); }
+      else { dlProg[id] = s.t > 0 ? s.b / s.t * 100 : 0; const b = $(`.model-card[data-id="${id}"] .btn-dl`); b && b.style.setProperty('--p', dlProg[id]); }
+    }, 800);
   }
   function useModel(id) {
     S.active = id; save(); updateTop(); renderModels(); renderSettings(); toast(model(id).short + ' sekarang aktif');
@@ -299,7 +461,7 @@
     const v = await openSheet(`<h2>${esc(mname(m))}</h2><p class="sub">Model bahasa lokal berformat GGUF.</p>
       <div class="kv"><span>Parameter</span><span>${m.meta}</span></div>
       <div class="kv"><span>Ukuran file</span><span>${fmtGB(m.gb)}</span></div>
-      <div class="kv"><span>Sumber</span><span>${m.src === 'hub' ? 'HF Hub' : 'Bawaan aplikasi'}</span></div>
+      <div class="kv"><span>Sumber</span><span>${m.src === 'hub' ? 'HF Hub' : 'Perangkat'}</span></div>
       <div class="kv"><span>Status</span><span>${act ? 'Aktif' : has ? 'Terunduh' : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh'}</span></div>
       ${!has ? '<button class="btn primary" data-v="dl">Unduh ' + fmtGB(m.gb) + '</button>' : ''}
       ${has && !act ? '<button class="btn primary" data-v="use">Pakai model ini</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus dari perangkat</button>' : ''}
@@ -313,7 +475,7 @@
     else if (v === 'del') {
       if (act) { toast('Model aktif tidak bisa dihapus. Pilih model lain dulu.'); return; }
       if (await confirmBox('Hapus ' + m.short + '?', 'File model ' + fmtGB(m.gb) + ' dihapus dari perangkat. Kamu bisa mengunduhnya lagi.', 'Hapus', true)) {
-        delete S.dl[id]; save(); renderModels(); renderSettings(); toast(m.short + ' dihapus');
+        NATIVE && NATIVE.deleteModel(meta(id).file); syncLocal(); renderModels(); renderSettings(); toast(m.short + ' dihapus');
       }
     }
   }
@@ -387,6 +549,8 @@
     $('#v-topp').textContent = String(S.topp).replace('.', ',');
     $('#v-maxTok').textContent = S.maxTok;
     $('#v-ctx').textContent = S.ctx;
+    $('#v-sys').textContent = S.sysPrompt ? (S.sysPrompt.length > 16 ? S.sysPrompt.slice(0, 16) + '…' : S.sysPrompt) : 'Kosong';
+    $('#v-hf').textContent = S.hfToken ? 'Tersimpan' : 'Belum diatur';
     const b = $('#v-onDevice'); b.textContent = S.onDevice ? 'ON' : 'OFF';
     b.style.color = S.onDevice ? '' : 'var(--bad)'; b.style.background = S.onDevice ? '' : 'rgba(255,93,108,.12)';
     $('#finderHint').textContent = MODELS.filter(m => S.dl[m.id]).length + ' model terunduh · ' + ROOT;
@@ -402,10 +566,11 @@
     },
     async lang() {
       const v = await choose('Bahasa', [{ v: 'id', l: 'Indonesia' }, { v: 'en', l: 'English' }], S.lang);
-      if (v) { S.lang = v; save(); renderSettings(); if (v === 'en') toast('Pilihan disimpan. Terjemahan penuh belum tersedia di prototipe ini.'); }
+      if (v) { S.lang = v; save(); renderSettings(); if (v === 'en') toast('Pilihan disimpan.'); }
     },
     async model() {
       const opts = MODELS.filter(m => S.dl[m.id]).map(m => ({ v: m.id, l: m.name, s: fmtGB(m.gb) }));
+      if (!opts.length) return toast('Belum ada model terunduh');
       const v = await choose('Model default', opts, S.active, 'Hanya model yang sudah diunduh.');
       if (v) useModel(v);
     },
@@ -413,6 +578,33 @@
     async topp() { const v = await slider('Top-p', 'Batas probabilitas kumulatif saat memilih kata berikutnya.', 0, 1, 0.05, S.topp, x => x.toFixed(2).replace('.', ',')); if (v != null) { S.topp = +v.toFixed(2); save(); renderSettings(); } },
     async maxTok() { const v = await slider('Max tokens', 'Panjang maksimum satu jawaban.', 256, 4096, 128, S.maxTok, x => String(x)); if (v != null) { S.maxTok = v; save(); renderSettings(); } },
     async ctx() { const v = await slider('Ukuran konteks', 'Konteks besar memakai lebih banyak RAM.', 1024, 8192, 1024, S.ctx, x => String(x)); if (v != null) { S.ctx = v; save(); renderSettings(); } },
+    async sysPrompt() {
+      const PRE = { Umum: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.', Penulis: 'Kamu penulis profesional. Perbaiki tata bahasa, jaga nada asli, dan jelaskan perubahan penting secara singkat.', Coder: 'Kamu insinyur perangkat lunak senior. Jawab dengan kode yang rapi dan penjelasan singkat.', Penerjemah: 'Kamu penerjemah Indonesia dan Inggris yang akurat. Terjemahkan tanpa menambah komentar.' };
+      const v = await openSheet(`<h2>System prompt</h2><p class="sub">Arahan dasar untuk semua chat. Pal yang dipilih akan memakai prompt-nya sendiri.</p>
+        <div class="chips" style="padding:0 0 10px">${Object.keys(PRE).map(k => `<button type="button" class="chip" data-pre="${k}">${k}</button>`).join('')}</div>
+        <textarea class="field" id="spt" rows="6" maxlength="2000" placeholder="Tulis arahan untuk asistenmu">${esc(S.sysPrompt || '')}</textarea>
+        <div class="kv" style="padding:6px 2px"><span>Panjang</span><span id="spn"></span></div>
+        <button class="btn primary" data-ok>Simpan</button><button class="btn ghost" data-v="rst">Kembalikan bawaan</button><button class="btn ghost" data-close>Batal</button>`,
+        (el, close) => {
+          const t = $('#spt', el), n = $('#spn', el), up = () => { n.textContent = t.value.length + ' / 2000'; }; up(); t.addEventListener('input', up);
+          $$('[data-pre]', el).forEach(b => b.addEventListener('click', () => { t.value = PRE[b.dataset.pre]; up(); }));
+          $('[data-ok]', el).addEventListener('click', () => close(t.value.trim()));
+          $('[data-v=rst]', el).addEventListener('click', () => close(PRE.Umum));
+        });
+      if (v == null) return; S.sysPrompt = v; save(); renderSettings(); toast(v ? 'System prompt disimpan' : 'System prompt dikosongkan');
+    },
+    async hfToken() {
+      const v = await openSheet(`<h2>Token Hugging Face</h2><p class="sub">Dipakai untuk model gated. Disimpan hanya di perangkat ini.</p>
+        <input class="field" id="hft" type="password" autocomplete="off" spellcheck="false" placeholder="hf_..." value="${esc(S.hfToken || '')}" />
+        <button class="btn primary" data-ok>Simpan</button>${S.hfToken ? '<button class="btn danger" data-v="rm" style="margin-top:8px">Hapus token</button>' : ''}<button class="btn ghost" data-close>Batal</button>`,
+        (el, close) => { $('[data-ok]', el).addEventListener('click', () => close($('#hft', el).value.trim())); const r = $('[data-v=rm]', el); r && r.addEventListener('click', () => close('')); });
+      if (v == null) return; S.hfToken = v; save(); renderSettings(); hubLoaded = false; toast(v ? 'Token disimpan' : 'Token dihapus');
+    },
+    async talents() {
+      const row = k => `<button class="opt ${S.talents[k] ? 'on' : ''}" data-v="${k}"><span class="o-txt">${k}<small>${esc(TALENTS[k].desc)}</small></span><i class="radio"></i></button>`;
+      await openSheet(`<h2>Talents</h2><p class="sub">Tool yang boleh dipanggil model. Di chat juga bisa lewat /calc, /waktu, /html. Pencarian web diatur lewat tombol globe di chat.</p>${Object.keys(TALENTS).filter(k => k !== 'web_search').map(row).join('')}<button class="btn ghost" data-close>Selesai</button>`,
+        el => $$('.opt', el).forEach(b => b.addEventListener('click', () => { S.talents[b.dataset.v] = !S.talents[b.dataset.v]; b.classList.toggle('on', S.talents[b.dataset.v]); save(); })));
+    },
     async onDevice() {
       if (S.onDevice) {
         if (!(await confirmBox('Matikan mode on-device?', 'Model online mungkin mengirim percakapan ke server. Nonaktifkan hanya jika kamu paham risikonya.', 'Matikan', true))) return;
@@ -426,13 +618,13 @@
     clearCache() { prevScreen = 'settings'; go('clean'); },
     license() {
       openSheet(`<h2>Lisensi</h2><div class="info-list">
-        <p><b>Box AI UI</b><br>Prototipe antarmuka, build rebrand.</p>
-        <p><b>PocketPal AI</b><br>Arsitektur dasar, lisensi MIT.</p>
+        <p><b>Box AI UI</b><br>Antarmuka Android Box AI.</p>
+        <p><b>Box AI</b><br>github.com/v1-byte/Box-Ai, lisensi MIT.</p><p><b>PocketPal AI</b><br>Arsitektur dasar, lisensi MIT.</p>
         <p><b>llama.cpp</b><br>Mesin inferensi, lisensi MIT.</p>
         <p><b>Model</b><br>Gemma: Gemma Terms of Use. Llama 3.2: Llama Community License. Phi-3: MIT. Mistral Nemo dan Qwen2.5: Apache 2.0.</p></div>
         <button class="btn ghost" data-close>Tutup</button>`);
     },
-    version() { toast('Box AI 1.0.0 adalah versi terbaru'); }
+    version() { toast('Box AI 2.0.0 adalah versi terbaru'); }
   };
   $$('[data-set]').forEach(el => el.addEventListener('click', () => ACTIONS[el.dataset.set] && ACTIONS[el.dataset.set]()));
 
@@ -452,7 +644,7 @@
   function calcSizes() {
     const idle = MODELS.filter(m => S.dl[m.id] && m.id !== S.active);
     return {
-      kv: S.cache.kv, tmp: S.cache.tmp, thumbs: S.cache.thumbs, logs: S.cache.logs,
+      kv: cacheMB(), tmp: 0, thumbs: 0, logs: 0,
       chat: S.chat.length ? 8 + S.chat.length * 0.6 : 0,
       models: idle.reduce((a, m) => a + m.gb * 1024, 0)
     };
@@ -487,9 +679,9 @@
     const el = $('#realStore');
     if (navigator.storage && navigator.storage.estimate) {
       navigator.storage.estimate().then(e => {
-        el.textContent = 'Penyimpanan aplikasi web ini (nyata): ' + fmtMB((e.usage || 0) / 1048576) + ' dari ' + fmtMB((e.quota || 0) / 1048576) + '. Ukuran di atas adalah simulasi.';
-      }).catch(() => { el.textContent = 'Ukuran di atas adalah simulasi.'; });
-    } else el.textContent = 'Ukuran di atas adalah simulasi.';
+        el.textContent = 'Penyimpanan aplikasi web ini (nyata): ' + fmtMB((e.usage || 0) / 1048576) + ' dari ' + fmtMB((e.quota || 0) / 1048576) + '. ';
+      }).catch(() => { el.textContent = ''; });
+    } else el.textContent = '';
   }
   async function scan() {
     phase = 'scanning'; sizes = calcSizes();
@@ -534,9 +726,9 @@
       $('.c-size', row).textContent = '0 MB';
     }
     // terapkan ke data
-    if (sel.kv) S.cache.kv = 0; if (sel.tmp) S.cache.tmp = 0; if (sel.thumbs) S.cache.thumbs = 0; if (sel.logs) S.cache.logs = 0;
+    if (sel.kv && NATIVE) NATIVE.clearCache(); if (sel.kv) S.cache.kv = 0; if (sel.tmp) S.cache.tmp = 0; if (sel.thumbs) S.cache.thumbs = 0; if (sel.logs) S.cache.logs = 0;
     if (sel.chat) { S.chat = []; S.typing = false; renderChat(); clearAttachment(); }
-    if (sel.models) MODELS.forEach(m => { if (m.id !== S.active) delete S.dl[m.id]; });
+    if (sel.models) { MODELS.slice().forEach(m => { if (m.id !== S.active && S.dl[m.id] && NATIVE) NATIVE.deleteModel(meta(m.id).file); }); syncLocal(); }
     save(); renderModels(); renderSettings();
     phase = 'done'; gauge.className = 'gauge done';
     setGauge(freed, 1, 'dibebaskan');
@@ -703,7 +895,7 @@
     if (!nameOk(name)) return toast('Nama tidak valid. Hindari tanda / dan \\');
     if (nameTaken(parent(ent.path), name, ent.path)) return toast('Nama itu sudah dipakai');
     const np = parent(ent.path) + '/' + name;
-    if (ent.mid) { meta(ent.mid).file = name; meta(ent.mid).mod = Date.now(); }
+    if (ent.mid) { if (!NATIVE || !NATIVE.renameModel(ent.name, name)) return toast('Gagal mengganti nama'); syncLocal(); renderFinder(); renderModels(); return toast('Nama diganti'); }
     else if (ent.type === 'dir') {
       S.fsx.dirs = S.fsx.dirs.map(d => d === ent.path || d.startsWith(ent.path + '/') ? np + d.slice(ent.path.length) : d);
       const nf = {}; Object.keys(S.fsx.files).forEach(k => { nf[k === ent.path || k.startsWith(ent.path + '/') ? np + k.slice(ent.path.length) : k] = S.fsx.files[k]; });
@@ -722,7 +914,7 @@
     if (ent.kind === 'gguf') {
       if (S.active === ent.mid) return toast('Model aktif tidak bisa dihapus. Pilih model lain dulu.');
       if (await confirmBox('Hapus ' + ent.name + '?', 'File model ' + fmtBytes(ent.size) + ' dihapus dari perangkat. Kamu bisa mengunduhnya lagi dari tab Models.', 'Hapus', true)) {
-        delete S.dl[ent.mid]; save(); renderFinder(); renderModels(); renderSettings(); toast('Model dihapus');
+        NATIVE && NATIVE.deleteModel(ent.name); syncLocal(); renderFinder(); renderModels(); renderSettings(); toast('Model dihapus');
       }
       return;
     }
@@ -770,7 +962,7 @@
       if (typeof o.name !== 'string' || !o.name.trim()) return toast('Field "name" tidak boleh kosong');
       if (!Number.isFinite(o.context_length) || o.context_length < 256) return toast('"context_length" harus angka minimal 256');
       if (typeof o.chat_template !== 'string' || typeof o.system_prompt !== 'string') return toast('"chat_template" dan "system_prompt" harus berupa teks');
-      let file = typeof o.file === 'string' ? o.file.trim() : mt.file;
+      let file = mt.file;
       if (!/\.gguf$/i.test(file)) file += '.gguf';
       if (!nameOk(file)) return toast('Nama "file" tidak valid');
       if (MODELS.some(m => m.id !== ed.mid && S.dl[m.id] && meta(m.id).file.toLowerCase() === file.toLowerCase())) return toast('Nama file itu sudah dipakai model lain');
@@ -792,11 +984,7 @@
   /* ---------- Penampil & editor metadata GGUF ---------- */
   let gg = null;
   function ggufBytes(id) {
-    const d = MMETA_DEF[id];
-    const u32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
-    const u64 = n => u32(n).concat([0, 0, 0, 0]);
-    const str = t => u64(t.length).concat(Array.from(t).map(c => c.charCodeAt(0)));
-    return [0x47, 0x47, 0x55, 0x46].concat(u32(3), u64(d.tensors), u64(d.kv), str('general.architecture'), u32(8), str(d.arch));
+    try { return (NATIVE.head(meta(id).file).match(/../g) || []).map(x => parseInt(x, 16)); } catch (e) { return []; }
   }
   function hexdump(b) {
     const a = new Array(128).fill(0); b.slice(0, 128).forEach((x, i) => { a[i] = x; });
@@ -816,10 +1004,10 @@
   }
   function ggUpdate() { const d = ggDirty(); $('#ggSave').disabled = !d; $('.ed-title', screens.gguf).classList.toggle('dirty', d); }
   function openGguf(id) {
-    gg = { mid: id }; const m = model(id), mt = meta(id), d = MMETA_DEF[id];
+    gg = { mid: id }; const m = model(id), mt = meta(id), d = MMETA_DEF[id], hb = ggufBytes(id), u = o => (hb[o] || 0) + ((hb[o + 1] || 0) << 8) + ((hb[o + 2] || 0) << 16) + (hb[o + 3] || 0) * 16777216;
     $('#ggTitle').textContent = mt.file; $('#ggPath').textContent = ROOT + '/models';
     $('#ggSize').textContent = fmtBytes(m.gb * 1073741824);
-    $('#ggInfo').innerHTML = [['Format', 'GGUF v3'], ['Arsitektur', d.arch], ['Parameter', m.meta.split(' · ')[0]], ['Kuantisasi', d.quant], ['Jumlah tensor', d.tensors], ['Pasangan metadata', d.kv], ['Terakhir diubah', fmtDate(mt.mod || S.installAt)]]
+    $('#ggInfo').innerHTML = [['Format', 'GGUF v' + (hb[4] || '?')], ['Kuantisasi', d.quant], ['Jumlah tensor', u(8)], ['Pasangan metadata', u(16)], ['Terakhir diubah', fmtDate(mt.mod || S.installAt)]]
       .map(r => `<div class="kv"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
     $('#ggFile').value = mt.file; $('#ggName').value = mt.name; $('#ggCtx').value = mt.ctx; $('#ggTpl').value = mt.tpl; $('#ggSys').value = mt.sys; $('#ggPreset').value = '';
     $('#ggHex').textContent = hexdump(ggufBytes(id));
@@ -829,7 +1017,7 @@
   $('#ggPreset').addEventListener('change', e => { if (e.target.value) { $('#ggTpl').value = TPL[e.target.value]; ggUpdate(); } });
   $('#ggSave').addEventListener('click', () => {
     const f = ggFields(), mt = meta(gg.mid);
-    let file = f.file; if (!/\.gguf$/i.test(file)) file += '.gguf';
+    let file = mt.file;
     if (!nameOk(file)) return toast('Nama file tidak valid');
     if (MODELS.some(m => m.id !== gg.mid && S.dl[m.id] && meta(m.id).file.toLowerCase() === file.toLowerCase())) return toast('Nama file itu sudah dipakai model lain');
     if (!f.name) return toast('Nama model tidak boleh kosong');
@@ -851,6 +1039,35 @@
     await deleteEntry(ent); if (!S.dl[gg.mid]) go('finder');
   });
 
+
+  /* ================= BENCHMARK PERANGKAT ================= */
+  function cpuBench() { const n = 1 << 16, a = new Float64Array(n).fill(1.0001); let x = 1, ops = 0; const t = performance.now(); while (performance.now() - t < 500) { for (let i = 0; i < n; i++) x = x * a[i] + 0.5; ops += n * 2; if (x > 1e9) x = 1; } return Math.round(ops / ((performance.now() - t) / 1000) / 1e6); }
+  function memBench() { const a = new Uint8Array(32 << 20), b = new Uint8Array(32 << 20); let c = 0; const t = performance.now(); while (performance.now() - t < 500) { b.set(a); c++; } return Math.round(c * 32 / ((performance.now() - t) / 1000)); }
+  function gpuName() { try { const g = document.createElement('canvas').getContext('webgl'), e = g.getExtension('WEBGL_debug_renderer_info'); return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : 'WebGL'; } catch (e) { return 'Tidak tersedia'; } }
+  function renderBench() {
+    const inf = nativeInfo(), last = S.bench[0], kv = (a, b) => `<div class="kv"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
+    const gb = inf.ram ? inf.ram / 1073741824 : 0;
+    const fit = MODELS.filter(m => S.dl[m.id]).map(m => { const r = gb ? m.gb * 1.25 / gb : 0; return kv(mname(m), !gb ? '—' : r <= .5 ? 'Nyaman' : r <= .75 ? 'Berat' : 'Tidak muat'); }).join('') || '<p class="empty">Belum ada model terunduh.</p>';
+    const hist = S.bench.map(b => kv(new Date(b.t).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), 'CPU ' + b.cpu + ' · Mem ' + b.mem)).join('') || '<p class="empty">Belum ada hasil.</p>';
+    $('#benchBody').innerHTML = `<div class="big-stat"><div><b>${last ? last.cpu : '—'}</b><span>CPU (MFLOPS, 1 thread)</span></div><div><b>${last ? last.mem : '—'}</b><span>Memori (MB/s salin)</span></div></div>
+      <h3 class="section-h">Perangkat</h3><div class="list">${kv('Perangkat', inf.device || 'Browser')}${kv('Core CPU', inf.cores || navigator.hardwareConcurrency || '—')}${kv('RAM', gb ? fmtBytes(inf.ram) : '—')}${kv('Penyimpanan bebas', inf.free ? fmtBytes(inf.free) : '—')}${kv('GPU', gpuName())}${kv('Android SDK', inf.sdk || '—')}${kv('Mesin LLM', Engine.ok() ? 'Siap' : 'Belum terpasang')}${kv('Token per detik', '— (butuh mesin LLM)')}</div>
+      <h3 class="section-h">Kecocokan model</h3><div class="list">${fit}</div>
+      <h3 class="section-h">Riwayat</h3><div class="list">${hist}</div>`;
+  }
+  $('#btnBench').addEventListener('click', async () => {
+    const b = $('#btnBench'); b.disabled = true; b.textContent = 'Menguji CPU…'; await sleep(60);
+    const cpu = cpuBench(); b.textContent = 'Menguji memori…'; await sleep(60);
+    const mem = memBench(); S.bench.unshift({ t: Date.now(), cpu, mem }); S.bench = S.bench.slice(0, 8); save();
+    b.disabled = false; b.textContent = 'Jalankan lagi'; renderBench(); toast('Benchmark selesai');
+  });
+  /* ripple */
+  document.addEventListener('pointerdown', e => {
+    const b = e.target.closest('.btn,.chip,.btn-use,.opt,.tab,.icon-btn,.send'); if (!b) return;
+    const r = b.getBoundingClientRect(), s = document.createElement('i');
+    s.className = 'rip'; s.style.cssText = `left:${e.clientX - r.left}px;top:${e.clientY - r.top}px`;
+    b.appendChild(s); setTimeout(() => s.remove(), 650);
+  });
   /* ================= INIT ================= */
-  renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
+  syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); } });
 })();

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#08090C" />
   <title>Box AI</title>
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" href="assets/logo-64.png" />
+  <link rel="icon" href="assets/logo-64.webp" />
 </head>
 <body>
 
@@ -45,6 +45,7 @@
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></symbol>
     <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 4 5.7 4 9s-1.4 6.3-4 9c-2.6-2.7-4-5.7-4-9s1.4-6.3 4-9z"/></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
   </defs>
 </svg>
@@ -69,7 +70,7 @@
     <header class="topbar">
       <button type="button" class="icon-btn" id="btnMenu" aria-label="Menu"><svg class="ic"><use href="#i-menu"/></svg></button>
       <div class="topbar-center">
-        <img src="assets/logo-64.png" alt="" class="topbar-logo" width="30" height="30" />
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
         <div class="titles">
           <div class="topbar-title" id="chatTitle">Box AI</div>
           <div class="topbar-sub"><i class="dot"></i><span id="chatSub">Gemma 2 2B · On-device</span></div>
@@ -83,6 +84,7 @@
     <div class="attach-chip" id="attachChip" hidden></div>
     <footer class="composer">
       <button type="button" class="icon-btn attach" id="btnAttach" aria-label="Lampirkan"><svg class="ic"><use href="#i-plus"/></svg></button>
+      <button type="button" class="icon-btn web" id="btnWeb" aria-label="Pencarian web" aria-pressed="false"><svg class="ic"><use href="#i-globe"/></svg></button>
       <input type="file" id="fileInput" hidden />
       <input id="composerInput" type="text" placeholder="Tulis pesan ke Box AI" autocomplete="off" />
       <button type="button" class="send" id="btnSend" aria-label="Kirim"><svg class="ic"><use href="#i-send"/></svg></button>
@@ -93,12 +95,13 @@
   <section id="screen-models" class="screen" data-nav="models" data-skeleton>
     <header class="topbar">
       <div class="topbar-center single">
-        <img src="assets/logo-64.png" alt="" class="topbar-logo" width="30" height="30" />
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
         <div class="topbar-title">Models</div>
       </div>
       <button type="button" class="icon-btn" id="btnModelMenu" aria-label="Opsi"><svg class="ic"><use href="#i-more"/></svg></button>
     </header>
     <div class="scroll">
+      <label class="search" id="hfBox" hidden><svg class="ic"><use href="#i-search"/></svg><input id="hfq" type="search" placeholder="Cari model GGUF di Hugging Face" autocomplete="off" /></label>
       <div class="chips">
         <button type="button" class="chip active" data-f="all">Semua</button>
         <button type="button" class="chip" data-f="dl">Terunduh</button>
@@ -110,6 +113,7 @@
       </div>
 
       <div class="real" id="modelList"></div>
+      <div class="real" id="hubList" hidden></div>
     </div>
   </section>
 
@@ -117,7 +121,7 @@
   <section id="screen-pals" class="screen" data-nav="pals" data-skeleton>
     <header class="topbar">
       <div class="topbar-center single">
-        <img src="assets/logo-64.png" alt="" class="topbar-logo" width="30" height="30" />
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
         <div class="topbar-title">Pals</div>
       </div>
       <button type="button" class="icon-btn" id="btnAddPal" aria-label="Tambah Pal"><svg class="ic"><use href="#i-plus"/></svg></button>
@@ -135,7 +139,7 @@
   <section id="screen-settings" class="screen" data-nav="settings">
     <header class="topbar">
       <div class="topbar-center single">
-        <img src="assets/logo-64.png" alt="" class="topbar-logo" width="30" height="30" />
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
         <div class="topbar-title">Settings</div>
       </div>
     </header>
@@ -165,6 +169,13 @@
         <div class="li link" data-set="topp"><span>Top-p</span><span class="val" id="v-topp"></span></div>
         <div class="li link" data-set="maxTok"><span>Max tokens</span><span class="val" id="v-maxTok"></span></div>
         <div class="li link" data-set="ctx"><span>Ukuran konteks</span><span class="val" id="v-ctx"></span></div>
+        <div class="li link" data-set="sysPrompt"><span>System prompt</span><span class="val" id="v-sys"></span></div>
+      </div>
+      <h3 class="section-h">Alat</h3>
+      <div class="list">
+        <div class="li link" data-set="hfToken"><span>Token Hugging Face</span><span class="val" id="v-hf"></span></div>
+        <div class="li link" data-set="talents"><span>Talents</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-go="bench"><span>Benchmark</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
       </div>
       <h3 class="section-h">Privasi</h3>
       <div class="list">
@@ -176,7 +187,7 @@
       <div class="list">
         <div class="li link" data-go="about"><span>Tentang Box AI</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
         <div class="li link" data-set="license"><span>Lisensi</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
-        <div class="li link" data-set="version"><span>Versi</span><span class="val">1.0.0</span></div>
+        <div class="li link" data-set="version"><span>Versi</span><span class="val">2.0.0</span></div>
       </div>
     </div>
   </section>
@@ -225,7 +236,7 @@
       <h3 class="section-h">Informasi</h3>
       <div class="list" id="ggInfo"></div>
       <h3 class="section-h">Metadata yang bisa diedit</h3>
-      <label class="lbl">Nama file<input class="field" id="ggFile" autocomplete="off" spellcheck="false" /></label>
+      <label class="lbl">Nama file<input class="field" id="ggFile" readonly autocomplete="off" spellcheck="false" /></label>
       <label class="lbl">Nama model<input class="field" id="ggName" maxlength="60" autocomplete="off" /></label>
       <label class="lbl">Panjang konteks<input class="field" id="ggCtx" type="number" inputmode="numeric" min="256" step="256" /></label>
       <label class="lbl">Preset chat template
@@ -274,7 +285,7 @@
     <div class="scroll about">
       <div class="about-hero">
         <span class="ring r1"></span><span class="ring r2"></span>
-        <img src="assets/logo.png" alt="Box AI" class="about-logo" width="112" height="112" />
+        <img src="assets/logo.webp" alt="Box AI" class="about-logo" width="112" height="112" />
       </div>
       <h1>Box AI</h1>
       <p>Asisten AI privat yang berjalan di ponselmu. Chat, Pals, dan Models, offline sejak awal.</p>
@@ -283,24 +294,17 @@
         <div><svg class="ic"><use href="#i-bolt"/></svg><b>Cepat</b><span>Tanpa jaringan</span></div>
         <div><svg class="ic"><use href="#i-cube"/></svg><b>Modular</b><span>Ganti model bebas</span></div>
       </div>
-      <p class="muted">Berbasis arsitektur open-source PocketPal AI. Build rebrand untuk Box AI.</p>
+      <p class="muted">Box AI berbasis PocketPal AI (MIT). Sumber: github.com/v1-byte/Box-Ai</p>
     </div>
   </section>
 
-  <!-- GALLERY -->
-  <section id="screen-gallery" class="screen">
+  <!-- BENCHMARK -->
+  <section id="screen-bench" class="screen">
     <header class="topbar">
-      <button type="button" class="icon-btn" data-go="chat" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
-      <div class="topbar-title pad">Referensi UI</div>
+      <button type="button" class="icon-btn" data-go="settings" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="topbar-title pad">Benchmark</div>
     </header>
-    <div class="scroll gallery">
-      <p class="lead">Layar asli PocketPal sebagai acuan tata letak.</p>
-      <figure><img loading="lazy" src="screenshots/Screenshot_Chat_1.webp" alt="Chat" /><figcaption>Chat</figcaption></figure>
-      <figure><img loading="lazy" src="screenshots/Screenshot_Models_1.webp" alt="Models" /><figcaption>Models</figcaption></figure>
-      <figure><img loading="lazy" src="screenshots/Screenshot_Models_2.webp" alt="Daftar model" /><figcaption>Daftar model</figcaption></figure>
-      <figure><img loading="lazy" src="screenshots/Screenshot_Model_Settings.webp" alt="Pengaturan model" /><figcaption>Pengaturan model</figcaption></figure>
-      <figure><img loading="lazy" src="screenshots/screenshot-settings-global.webp" alt="Settings" /><figcaption>Settings</figcaption></figure>
-    </div>
+    <div class="scroll"><div id="benchBody"></div><button type="button" class="btn primary" id="btnBench">Jalankan benchmark</button></div>
   </section>
 
   <div class="overlay" id="overlay" hidden></div>
