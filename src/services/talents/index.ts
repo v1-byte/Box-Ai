@@ -4,6 +4,9 @@ import {DatetimeEngine} from './DatetimeEngine';
 import {WebSearchEngine} from './WebSearchEngine';
 import {ReadUrlEngine} from './ReadUrlEngine';
 import {WeatherEngine} from './WeatherEngine';
+import {PrayerTimeEngine} from './PrayerTimeEngine';
+import {FinanceEngine} from './FinanceEngine';
+import {FileReaderEngine} from './FileReaderEngine';
 import {talentRegistry} from './TalentRegistry';
 import type {SearchAccess} from './searchAccess';
 import type {ToolDefinition, SystemPromptContext} from './types';
@@ -19,6 +22,9 @@ export {DatetimeEngine} from './DatetimeEngine';
 export {WebSearchEngine} from './WebSearchEngine';
 export {ReadUrlEngine} from './ReadUrlEngine';
 export {WeatherEngine} from './WeatherEngine';
+export {PrayerTimeEngine} from './PrayerTimeEngine';
+export {FinanceEngine} from './FinanceEngine';
+export {FileReaderEngine} from './FileReaderEngine';
 export type {SearchAccess} from './searchAccess';
 // Deliberately narrow: the raw allowlist writers stay module-internal so all
 // writes happen inside services/talents (seed at run start, WebSearchEngine
@@ -62,6 +68,9 @@ export function registerDefaultTalents(): void {
   talentRegistry.register(new CalculateEngine());
   talentRegistry.register(new DatetimeEngine());
   talentRegistry.register(new WeatherEngine());
+  talentRegistry.register(new PrayerTimeEngine());
+  talentRegistry.register(new FinanceEngine());
+  talentRegistry.register(new FileReaderEngine());
   const searchAccess = createSearchAccess();
   talentRegistry.register(new WebSearchEngine(searchAccess));
   talentRegistry.register(new ReadUrlEngine(searchAccess));

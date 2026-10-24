@@ -56,6 +56,7 @@ import {
   SettingsScreen,
   BenchmarkScreen,
   AboutScreen,
+  PrivacyDashboardScreen,
 
   // Dev tools screen. Only available in debug mode.
   DevToolsScreen,
@@ -206,6 +207,17 @@ const App = observer(() => {
                               options={{
                                 headerStyle: styles.headerWithoutDivider,
                                 title: currentL10n.screenTitles.appInfo,
+                              }}
+                            />
+
+                            <Drawer.Screen
+                              name={ROUTES.PRIVACY}
+                              component={gestureHandlerRootHOC(
+                                PrivacyDashboardScreen,
+                              )}
+                              options={{
+                                headerStyle: styles.headerWithoutDivider,
+                                title: 'Privacy',
                               }}
                             />
 
