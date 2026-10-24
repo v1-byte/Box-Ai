@@ -7,6 +7,8 @@ import {WeatherEngine} from './WeatherEngine';
 import {PrayerTimeEngine} from './PrayerTimeEngine';
 import {FinanceEngine} from './FinanceEngine';
 import {FileReaderEngine} from './FileReaderEngine';
+import {ImageUnderstandEngine} from './ImageUnderstandEngine';
+import {RagSearchEngine} from './RagSearchEngine';
 import {talentRegistry} from './TalentRegistry';
 import type {SearchAccess} from './searchAccess';
 import type {ToolDefinition, SystemPromptContext} from './types';
@@ -25,6 +27,8 @@ export {WeatherEngine} from './WeatherEngine';
 export {PrayerTimeEngine} from './PrayerTimeEngine';
 export {FinanceEngine} from './FinanceEngine';
 export {FileReaderEngine} from './FileReaderEngine';
+export {ImageUnderstandEngine} from './ImageUnderstandEngine';
+export {RagSearchEngine} from './RagSearchEngine';
 export type {SearchAccess} from './searchAccess';
 // Deliberately narrow: the raw allowlist writers stay module-internal so all
 // writes happen inside services/talents (seed at run start, WebSearchEngine
@@ -71,6 +75,8 @@ export function registerDefaultTalents(): void {
   talentRegistry.register(new PrayerTimeEngine());
   talentRegistry.register(new FinanceEngine());
   talentRegistry.register(new FileReaderEngine());
+  talentRegistry.register(new ImageUnderstandEngine());
+  talentRegistry.register(new RagSearchEngine());
   const searchAccess = createSearchAccess();
   talentRegistry.register(new WebSearchEngine(searchAccess));
   talentRegistry.register(new ReadUrlEngine(searchAccess));

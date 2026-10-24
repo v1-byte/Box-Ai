@@ -1,42 +1,39 @@
-# Box AI — Roadmap ungguli PocketPal (pasar Indonesia)
+# Box AI — Roadmap ungguli PocketPal (Indonesia)
 
 Repo: https://github.com/v1-byte/Box-Ai
 
-## Sudah di-landasan (kode di repo)
+## Implemented in code
 
-| Fitur | Status | Lokasi |
-|-------|--------|--------|
-| Talent `weather` | ✅ | `src/services/talents/WeatherEngine.ts` |
-| Talent `file_reader` | ✅ scaffold (TXT/MD/CSV/JSON) | `src/services/talents/FileReaderEngine.ts` |
-| Talent `finance` (catat Rp) | ✅ on-device AsyncStorage | `src/services/talents/FinanceEngine.ts` |
-| Talent `prayer_times` | ✅ offline approx | `src/services/talents/PrayerTimeEngine.ts` |
-| RAG scaffold (chunk) | ✅ | `src/services/rag/` |
-| Model RAM recommender | ✅ | `src/services/modelManager/recommend.ts` |
-| Privacy Dashboard screen | ✅ | `src/screens/PrivacyDashboardScreen/` |
-| Theme accent Box | ✅ | `#00C2FF` |
-| Package `com.v1byte.boxai` | ✅ | Android + iOS |
+| Fitur | Status | Path |
+|-------|--------|------|
+| file_reader | ✅ text files | `talents/FileReaderEngine.ts` |
+| rag_search + in-memory RAG | ✅ ingest/search/list | `talents/RagSearchEngine.ts`, `services/rag/` |
+| pickAndIngestDocument | ✅ | `services/documents/pickAndIngest.ts` |
+| finance (Rp) | ✅ | `talents/FinanceEngine.ts` |
+| prayer_times | ✅ offline approx | `talents/PrayerTimeEngine.ts` |
+| weather | ✅ | `talents/WeatherEngine.ts` |
+| image_understand | ✅ scaffold | `talents/ImageUnderstandEngine.ts` |
+| Model RAM recommender + UI banner | ✅ | `modelManager/recommend.ts`, `ModelRecommendBanner` |
+| Voice loop controller | ✅ orchestration | `services/voiceLoop/` |
+| Chat export TXT | ✅ | `services/chatExport/exportChat.ts` |
+| SHA256 verify helper | ✅ | `downloads/verifyHash.ts` |
+| Privacy Dashboard | ✅ drawer | `PrivacyDashboardScreen` |
+| Theme accent + AMOLED bg | ✅ | `#00C2FF`, dark bg `#000` |
+| Package com.v1byte.boxai | ✅ | Android + iOS |
 
-## Minggu 1 (lanjutan)
+## Still to deepen (native / product polish)
 
-- [ ] PDF text extract native / modul
-- [ ] Embeddings MiniLM + sqlite vector retrieve
-- [ ] UI attach file di ChatInput → path ke file_reader / RAG
-- [ ] Tampilkan `recommendModelTier()` di ModelsScreen sebelum download
+- [ ] PDF binary → text (native module or pdf.js bridge)
+- [ ] Real embeddings (MiniLM GGUF) + sqlite vector
+- [ ] Wire VoiceLoopController to ASR/TTS stores in Chat UI
+- [ ] Multimodal GGUF load path for vision models
+- [ ] Enforce airplane-style network block for inference
+- [ ] adhan + compass kiblat
+- [ ] Export PDF, pin chats, FTS search history
 
-## Minggu 2
+## Claim lines (marketing)
 
-- [ ] Whisper STT loop (whisper.rn sudah di deps)
-- [ ] Voice-to-voice: VAD → STT → LLM stream → TTS auto
-- [ ] Vision: Moondream / Llava Q4 + attach image
-
-## Minggu 3
-
-- [ ] Jadwal sholat lib `adhan` + kiblat kompas
-- [ ] Export chat PDF/TXT, search history, pin
-- [ ] Privacy: enforce block network flag
-- [ ] UI AMOLED + bubble polish
-
-## Positioning Play Store
-
-- Keyword: AI offline baca PDF, AI tanpa internet Indonesia, chat PDF offline
-- Klaim minggu 1: **PocketPal tidak baca PDF lokal — Box AI punya file_reader + RAG pipeline**
+1. **Baca dokumen lokal** — file_reader + RAG (TXT sekarang; PDF menyusul extract)
+2. **Keuangan & sholat offline** — talent Indonesia
+3. **Rekomendasi model dari RAM** — cegah crash HP kentang
+4. **Privacy Dashboard** — bukti data tidak keluar HP

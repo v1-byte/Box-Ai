@@ -30,6 +30,7 @@ import {uiStore, modelStore, hfStore, UIStore, serverStore} from '../../store';
 import {L10nContext} from '../../utils';
 import {Model, ModelOrigin} from '../../utils/types';
 import {ErrorState} from '../../utils/errors';
+import {ModelRecommendBanner} from '../../components/ModelRecommendBanner';
 
 export const ModelsScreen: React.FC = observer(() => {
   const l10n = useContext(L10nContext);
@@ -396,6 +397,7 @@ export const ModelsScreen: React.FC = observer(() => {
 
       <FlatList
         testID="flat-list"
+        ListHeaderComponent={<ModelRecommendBanner />}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.listContainer}

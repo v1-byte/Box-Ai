@@ -164,7 +164,7 @@ export const lightColors: TokenColors = {
 // Dark base values from canonical Figma. Where the canonical dark binding
 // differs visibly from the current dark Theme value, the current value
 // wins to avoid visual regression (tracked as a designer follow-up).
-const DARK_PRIMARY = '#DADDE6';
+const DARK_PRIMARY = '#E8EAED';
 const DARK_SECONDARY = '#00C2FF';
 const DARK_TERTIARY = '#80E6E4';
 const DARK_ERROR = '#FF653F';
