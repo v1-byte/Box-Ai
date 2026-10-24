@@ -5,7 +5,7 @@ import {PLUS_FEATURE_URL, isPlusFeatureUrl} from '../plusFeatureRoute';
 
 const params = (url: string): DeepLinkParams => ({
   url,
-  scheme: 'pocketpal',
+  scheme: 'boxai',
   host: 'e2e',
 });
 
@@ -17,9 +17,9 @@ describe('plus feature route', () => {
   it.each([
     null,
     undefined,
-    'pocketpal://e2e/plus-featureX',
-    'pocketpal://e2e/benchmark',
-    'pocketpal://plus-feature',
+    'boxai://e2e/plus-featureX',
+    'boxai://e2e/benchmark',
+    'boxai://plus-feature',
   ])('rejects %p', url => {
     expect(isPlusFeatureUrl(url)).toBe(false);
   });
@@ -39,7 +39,7 @@ describe('plus feature route', () => {
     const navigate = jest.fn();
 
     const handled = await dispatchAutomationDeepLink(
-      params('pocketpal://e2e/unknown'),
+      params('boxai://e2e/unknown'),
       {navigate},
     );
 

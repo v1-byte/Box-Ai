@@ -1,7 +1,7 @@
 /**
  * Grep-based invariants for the theming foundation.
  *
- * These tests would have been better expressed as lint rules, but PocketPal
+ * These tests would have been better expressed as lint rules, but Box AI
  * doesn't ship a custom ESLint plugin and the regressions they guard are
  * cheap to express with a recursive directory walk. They complement (do
  * NOT replace) the scripts/verify-* CI checks for fonts and the Paper

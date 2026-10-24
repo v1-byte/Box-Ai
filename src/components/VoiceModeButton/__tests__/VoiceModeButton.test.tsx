@@ -57,7 +57,7 @@ describe('VoiceModeButton', () => {
     const button = getByTestId('voice-mode-button');
     expect(getByTestId('voice-mode-lock')).toBeTruthy();
     expect(button.props.accessibilityLabel).toBe(
-      'Hands-free voice, PocketPal Plus',
+      'Hands-free voice, Box AI Plus',
     );
     expect(button.props.accessibilityHint).toBe(
       'Opens a short preview. Typing and dictation stay free.',

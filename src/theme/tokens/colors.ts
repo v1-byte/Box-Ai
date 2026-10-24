@@ -26,8 +26,8 @@ import {TokenColors} from './types';
 
 // Light base colors (verbatim from src/utils/theme.ts:111-147).
 const LIGHT_PRIMARY = '#333333';
-const LIGHT_SECONDARY = '#1E4DF6';
-const LIGHT_TERTIARY = '#7880FF';
+const LIGHT_SECONDARY = '#00C2FF';
+const LIGHT_TERTIARY = '#7CFFB2';
 const LIGHT_ERROR = '#FF653F';
 const LIGHT_BACKGROUND = '#ffffff';
 const LIGHT_ON_BACKGROUND = '#111111';
@@ -165,7 +165,7 @@ export const lightColors: TokenColors = {
 // differs visibly from the current dark Theme value, the current value
 // wins to avoid visual regression (tracked as a designer follow-up).
 const DARK_PRIMARY = '#DADDE6';
-const DARK_SECONDARY = '#95ABE6';
+const DARK_SECONDARY = '#00C2FF';
 const DARK_TERTIARY = '#80E6E4';
 const DARK_ERROR = '#FF653F';
 const DARK_BACKGROUND = '#000000';

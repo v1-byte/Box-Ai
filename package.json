@@ -1,6 +1,6 @@
 {
-  "name": "BoxAI",
-  "version": "1.21.0",
+  "name": "box-ai",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "prepare": "husky",
@@ -153,5 +153,15 @@
     "android": {
       "javaPackageName": "com.pocketpal.specs"
     }
-  }
+  },
+  "description": "Box AI \u2014 private on-device AI assistant for your phone. Offline by default.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/v1-byte/Box-Ai.git"
+  },
+  "homepage": "https://github.com/v1-byte/Box-Ai",
+  "bugs": {
+    "url": "https://github.com/v1-byte/Box-Ai/issues"
+  },
+  "displayName": "Box AI"
 }

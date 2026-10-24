@@ -5,4 +5,4 @@ import DeviceInfo from 'react-native-device-info';
  * The `(ai.pocketpal)` token is a fixed attribution key on both platforms.
  */
 export const hfUserAgent = (): string =>
-  `PocketPal/${DeviceInfo.getVersion()} (ai.pocketpal)`;
+  `Box AI/${DeviceInfo.getVersion()} (ai.pocketpal)`;

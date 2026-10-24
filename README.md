@@ -8,22 +8,22 @@
 
 Chat with language models, give them a voice, and let them use tools — all on-device. No account, no cloud, no internet required.
 
-<a href="https://pocketpal.dev/"><strong>pocketpal.dev</strong></a> ·
+<a href="https://github.com/v1-byte/Box-Ai"><strong>box-ai</strong></a> ·
 <a href="#get-the-app">Get the app</a> ·
-<a href="https://pocketpal.dev/leaderboard">Leaderboard</a> ·
-<a href="https://palshub.ai/">PalsHub</a> ·
-<a href="https://github.com/a-ghorbani/pocketpal-ai/discussions">Discussions</a>
+<a href="https://github.com/v1-byte/Box-Ai">Leaderboard</a> ·
+<a href="https://github.com/v1-byte/Box-Ai">PalsHub</a> ·
+<a href="https://github.com/v1-byte/Box-Ai/discussions">Discussions</a>
 
 <br/>
 
-[![App Store](https://img.shields.io/badge/App_Store-Download-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/us/app/pocketpal-ai/id6502579498)
-[![Google Play](https://img.shields.io/badge/Google_Play-Get_it-414141?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.pocketpalai)
+[![App Store](https://img.shields.io/badge/App_Store-Download-0D96F6?logo=apple&logoColor=white)](https://github.com/v1-byte/Box-Ai)
+[![Google Play](https://img.shields.io/badge/Google_Play-Get_it-414141?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.v1byte.boxai)
 
-[![Latest release](https://img.shields.io/github/v/release/a-ghorbani/pocketpal-ai?sort=semver)](https://github.com/a-ghorbani/pocketpal-ai/releases)
-[![License: MIT](https://img.shields.io/github/license/a-ghorbani/pocketpal-ai)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/a-ghorbani/pocketpal-ai)](https://github.com/a-ghorbani/pocketpal-ai/stargazers)
-[![Open issues](https://img.shields.io/github/issues/a-ghorbani/pocketpal-ai)](https://github.com/a-ghorbani/pocketpal-ai/issues)
-[![Sponsor](https://img.shields.io/github/sponsors/a-ghorbani?logo=githubsponsors)](https://github.com/sponsors/a-ghorbani)
+[![Latest release](https://img.shields.io/github/v/release/v1-byte/Box-Ai?sort=semver)](https://github.com/v1-byte/Box-Ai/releases)
+[![License: MIT](https://img.shields.io/github/license/v1-byte/Box-Ai)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/v1-byte/Box-Ai)](https://github.com/v1-byte/Box-Ai/stargazers)
+[![Open issues](https://img.shields.io/github/issues/v1-byte/Box-Ai)](https://github.com/v1-byte/Box-Ai/issues)
+[![Sponsor](https://img.shields.io/github/sponsors/a-ghorbani?logo=githubsponsors)](https://github.com/v1-byte/Box-Ai)
 
 </div>
 
@@ -57,10 +57,10 @@ Most AI apps are a thin window onto someone else's server — every message you 
 - **🧠 On-device chat** — run GGUF language models (Gemma, Qwen, Phi, Llama, and more) fully offline.
 - **🗣️ Text-to-speech** — give your assistant a voice with on-device neural TTS (Kokoro and other engines), no cloud calls.
 - **🎭 Pals** — create personalized assistants with their own model, system prompt, and personality (Assistant and Roleplay types).
-- **🛍️ [PalsHub](https://palshub.ai/)** — discover and install community Pals, including premium ones via in-app purchase.
+- **🛍️ [PalsHub](https://github.com/v1-byte/Box-Ai)** — discover and install community Pals, including premium ones via in-app purchase.
 - **🛠️ Talents & tools** — let capable Pals call built-in tools (calculator, date/time, rich HTML rendering) inside a tool-use loop.
 - **📥 Hugging Face integration** — search and download GGUF models, including gated ones, directly from the HF Hub with your access token.
-- **📊 Benchmarking** — measure tokens/sec and memory, and optionally compare on the [AI Phone Leaderboard](https://pocketpal.dev/leaderboard).
+- **📊 Benchmarking** — measure tokens/sec and memory, and optionally compare on the [AI Phone Leaderboard](https://github.com/v1-byte/Box-Ai).
 - **⚡ Hardware acceleration** — CPU, GPU (Metal on iOS, OpenCL/Adreno on Android), and NPU (Qualcomm Hexagon) inference paths, with graceful fallback.
 - **🌍 Localized** — available in 11 languages, on phones and tablets, including full iPad support.
 
@@ -68,8 +68,8 @@ Most AI apps are a thin window onto someone else's server — every message you 
 
 | Platform | |
 | --- | --- |
-| **iOS / iPadOS** | [![Download on the App Store](https://img.shields.io/badge/App_Store-Download-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/us/app/pocketpal-ai/id6502579498) |
-| **Android** | [![Get it on Google Play](https://img.shields.io/badge/Google_Play-Get_it-414141?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.pocketpalai) |
+| **iOS / iPadOS** | [![Download on the App Store](https://img.shields.io/badge/App_Store-Download-0D96F6?logo=apple&logoColor=white)](https://github.com/v1-byte/Box-Ai) |
+| **Android** | [![Get it on Google Play](https://img.shields.io/badge/Google_Play-Get_it-414141?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.v1byte.boxai) |
 
 **Three steps to your first chat:**
 
@@ -132,7 +132,7 @@ Create personalized assistants:
 - **Assistant Pal** — pick a default model, set a system prompt (write it yourself or have the app generate one), and customize the chat input color.
 - **Roleplay Pal** — everything above, plus location, the AI's role, and other contextual parameters.
 
-Switch personas with the Pal picker on the chat page. Browse **[PalsHub](https://palshub.ai/)** in-app to discover community Pals, including premium ones via in-app purchase.
+Switch personas with the Pal picker on the chat page. Browse **[PalsHub](https://github.com/v1-byte/Box-Ai)** in-app to discover community Pals, including premium ones via in-app purchase.
 
 <img src="assets/images and logos/Pals.png" alt="Assistant Pal" width="100%">
 <p><em>Creating a cocktail-recipe assistant</em></p>
@@ -146,7 +146,7 @@ Switch personas with the Pal picker on the chat page. Browse **[PalsHub](https:/
 1. Open the **Benchmark** page.
 2. Run performance tests to compare speed and efficiency across models.
 3. Review tokens/sec and memory usage.
-4. Optionally share your results to the [AI Phone Leaderboard](https://pocketpal.dev/leaderboard).
+4. Optionally share your results to the [AI Phone Leaderboard](https://github.com/v1-byte/Box-Ai).
 
 <img src="assets/images and logos/Benchmark.png" alt="Benchmark" width="100%">
 </details>
@@ -188,8 +188,8 @@ See the [React Native environment setup](https://reactnative.dev/docs/set-up-you
 ### Clone, install & run
 
 ```bash
-git clone https://github.com/a-ghorbani/pocketpal-ai
-cd pocketpal-ai
+git clone https://github.com/v1-byte/Box-Ai
+cd Box-Ai
 
 nvm use                       # match the pinned Node version
 yarn install                  # install JS dependencies
@@ -296,14 +296,14 @@ Please read the [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct]
 
 - **Tool use expansion** — grow the Talents catalog and deepen the agentic loop so Pals can do more, fully on-device.
 
-Have an idea or found a bug? [Open an issue](https://github.com/a-ghorbani/pocketpal-ai/issues/new/choose) or start a [discussion](https://github.com/a-ghorbani/pocketpal-ai/discussions).
+Have an idea or found a bug? [Open an issue](https://github.com/v1-byte/Box-Ai/issues/new/choose) or start a [discussion](https://github.com/v1-byte/Box-Ai/discussions).
 
 ## Community & support
 
-- 💬 **Questions & ideas** — [GitHub Discussions](https://github.com/a-ghorbani/pocketpal-ai/discussions)
-- 🐛 **Bugs & requests** — [GitHub Issues](https://github.com/a-ghorbani/pocketpal-ai/issues/new/choose)
-- 🌐 **Website** — [pocketpal.dev](https://pocketpal.dev/)
-- ❤️ **Support development** — Box AI is free and ad-free; [sponsoring](https://github.com/sponsors/a-ghorbani) helps keep it that way.
+- 💬 **Questions & ideas** — [GitHub Discussions](https://github.com/v1-byte/Box-Ai/discussions)
+- 🐛 **Bugs & requests** — [GitHub Issues](https://github.com/v1-byte/Box-Ai/issues/new/choose)
+- 🌐 **Website** — [pocketpal.dev](https://github.com/v1-byte/Box-Ai)
+- ❤️ **Support development** — Box AI is free and ad-free; [sponsoring](https://github.com/v1-byte/Box-Ai) helps keep it that way.
 
 ## License
 
@@ -329,3 +329,11 @@ Made with ❤️ for people who want AI that stays on their phone.
 <sub>If Box AI is useful to you, consider giving it a ⭐ — it helps others find the project.</sub>
 
 </div>
+
+---
+
+## Attribution
+
+**Box AI** is based on [PocketPal AI](https://github.com/a-ghorbani/pocketpal-ai) by a-ghorbani, licensed under the MIT License.
+
+Package ID: `com.v1byte.boxai` · Repo: https://github.com/v1-byte/Box-Ai

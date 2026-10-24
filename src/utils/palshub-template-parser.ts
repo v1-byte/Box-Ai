@@ -71,8 +71,8 @@ export function parsePalsHubTemplate(template: string): ParsedMustacheTemplate {
   const schema = extractJsonSchema(template);
   const cleanSystemPrompt = cleanTemplate(template);
 
-  // Convert schema to PocketPal format
-  const parameterSchema = schema ? convertJsonSchemaToPocketPal(schema) : [];
+  // Convert schema to Box AI format
+  const parameterSchema = schema ? convertJsonSchemaToBox AI(schema) : [];
   const defaultParameters = schema
     ? extractDefaultParametersFromSchema(schema)
     : {};
@@ -85,9 +85,9 @@ export function parsePalsHubTemplate(template: string): ParsedMustacheTemplate {
 }
 
 /**
- * Converts JSON schema to PocketPal ParameterDefinition format
+ * Converts JSON schema to Box AI ParameterDefinition format
  */
-function convertJsonSchemaToPocketPal(
+function convertJsonSchemaToBox AI(
   schema: Record<string, MustacheSchemaDefinition>,
 ): ParameterDefinition[] {
   const parameterSchema: ParameterDefinition[] = [];
@@ -97,7 +97,7 @@ function convertJsonSchemaToPocketPal(
       continue;
     }
 
-    // Map schema types to PocketPal types
+    // Map schema types to Box AI types
     let pocketPalType: ParameterDefinition['type'];
     switch (definition.type) {
       case 'select':

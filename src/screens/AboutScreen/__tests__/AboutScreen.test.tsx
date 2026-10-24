@@ -42,7 +42,7 @@ describe('AboutScreen', () => {
   it('renders correctly', () => {
     const {getByText} = render(<AboutScreen />);
 
-    expect(getByText('PocketPal AI')).toBeTruthy();
+    expect(getByText('Box AI')).toBeTruthy();
     expect(getByText('v1.0.0 (100)')).toBeTruthy();
     expect(getByText(l10n.en.about.supportProject)).toBeTruthy();
     expect(getByText(l10n.en.about.githubButton)).toBeTruthy();
@@ -85,9 +85,9 @@ describe('AboutScreen', () => {
     fireEvent.press(privacy);
     fireEvent.press(terms);
     expect(Linking.openURL).toHaveBeenCalledWith(
-      'https://pocketpal.dev/privacy-policy',
+      'https://github.com/v1-byte/Box-Ai/privacy-policy',
     );
-    expect(Linking.openURL).toHaveBeenCalledWith('https://pocketpal.dev/terms');
+    expect(Linking.openURL).toHaveBeenCalledWith('https://github.com/v1-byte/Box-Ai/terms');
     expect(notices.props.testID).toBe('about-open-source-notices');
   });
 
@@ -117,7 +117,7 @@ describe('AboutScreen', () => {
     fireEvent.press(getByText('Star on GitHub'));
 
     expect(Linking.openURL).toHaveBeenCalledWith(
-      'https://github.com/a-ghorbani/pocketpal-ai',
+      'https://github.com/v1-byte/Box-Ai',
     );
   });
 

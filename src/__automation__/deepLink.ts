@@ -3,19 +3,19 @@
  * in src/hooks/useDeepLinking.ts, so this module is DCE-stripped in prod.
  *
  * Supported protocols in v1:
- *   pocketpal://memory?cmd=snap::<label>
- *   pocketpal://memory?cmd=clear::snapshots
- *   pocketpal://tts?cmd=download::<engine>
- *   pocketpal://tts?cmd=synthesize::<engine>
- *   pocketpal://tts?cmd=release
- *   pocketpal://asr?cmd=state::<ready|not-installed|unsupported|recording|
+ *   boxai://memory?cmd=snap::<label>
+ *   boxai://memory?cmd=clear::snapshots
+ *   boxai://tts?cmd=download::<engine>
+ *   boxai://tts?cmd=synthesize::<engine>
+ *   boxai://tts?cmd=release
+ *   boxai://asr?cmd=state::<ready|not-installed|unsupported|recording|
  *                              transcribing|waiting-chat|error-capture|
  *                              error-blocked|error-memory|error-disk>
- *   pocketpal://voice?cmd=<verb>::<arg>   (voice mode, see voiceAutomation.ts)
- *   pocketpal://iap?cmd=<verb>::<arg>   (FakeStore script, see fakeStore.ts)
- *   pocketpal://e2e/plus-feature   (locked feature behind Plus; Android
+ *   boxai://voice?cmd=<verb>::<arg>   (voice mode, see voiceAutomation.ts)
+ *   boxai://iap?cmd=<verb>::<arg>   (FakeStore script, see fakeStore.ts)
+ *   boxai://e2e/plus-feature   (locked feature behind Plus; Android
  *                                   routes it in useDeepLinking.ts too)
- *   pocketpal://e2e/benchmark   (Android: cold-launch path lives in
+ *   boxai://e2e/benchmark   (Android: cold-launch path lives in
  *                                useDeepLinking.ts since RN's Android side
  *                                doesn't deliver the URL via DeepLinkService)
  */
@@ -67,7 +67,7 @@ export async function dispatchAutomationDeepLink(
     await fakeStore.run(params.queryParams.cmd);
     return true;
   }
-  // pocketpal://e2e/benchmark — bench host. Match against the raw URL via
+  // boxai://e2e/benchmark — bench host. Match against the raw URL via
   // the shared helper so both deep-link sites (this dispatcher and the
   // useDeepLinking cold/warm-launch effect) accept the exact same shape.
   if (isBenchmarkRunnerUrl(params.url)) {

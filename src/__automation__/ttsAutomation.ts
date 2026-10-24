@@ -20,7 +20,7 @@ import {ttsStore} from '../store/TTSStore';
 const STATUS_FILENAME = 'tts-command-status.json';
 
 const SAMPLE_TEXT =
-  'PocketPal runs language models on your phone, fully offline.';
+  'Box AI runs language models on your phone, fully offline.';
 
 const TIMING_RUNS = 3;
 
@@ -182,7 +182,7 @@ async function timeEngine(engineId: NeuralEngineId): Promise<TimingDetail> {
 }
 
 /**
- * Dispatch a `pocketpal://tts?cmd=...` command. Supported:
+ * Dispatch a `boxai://tts?cmd=...` command. Supported:
  *   download::<engine>   synthesize::<engine>   time::<engine>   release
  * Writes a status file the spec polls for completion.
  */

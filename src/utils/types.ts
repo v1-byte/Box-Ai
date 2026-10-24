@@ -736,7 +736,7 @@ type RequiredContextFields =
   | 'use_mlock';
 
 /**
- * Context initialization parameters for PocketPal AI
+ * Context initialization parameters for Box AI
  * Extends llama.rn's ContextParams but excludes 'model' and makes core fields required
  * This ensures type safety and eliminates the need for fallback values in UI components
  */

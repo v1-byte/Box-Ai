@@ -8,7 +8,7 @@ const YOU_FREE_URL = 'https://api.you.com/v1/agents/search';
 const YOU_KEYED_URL = 'https://ydc-index.io/v1/search';
 
 /** Attribution token appended to the app User-Agent, only on You.com requests. */
-const YOU_UA_TOKEN = 'youdotcom-integration/a-ghorbani-pocketpal-ai';
+const YOU_UA_TOKEN = 'youdotcom-integration/a-ghorbani-box-ai';
 
 export const YOU_FREE_LIMIT_MESSAGE =
   'You.com free search limit reached (100 searches a day). Add a You.com API key in Settings → Internet Search for higher limits.';

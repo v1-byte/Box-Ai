@@ -66,10 +66,10 @@ describe('SidebarContent Plus entry', () => {
     const {getAllByText} = render(<TestNavigator />);
 
     expect(
-      getAllByText(/^(Settings|PocketPal Plus|App Info)$/).map(
+      getAllByText(/^(Settings|Box AI Plus|App Info)$/).map(
         node => node.props.children,
       ),
-    ).toEqual(['Settings', 'PocketPal Plus', 'App Info']);
+    ).toEqual(['Settings', 'Box AI Plus', 'App Info']);
   });
 
   it('closes the drawer, then opens Plus with no callback', () => {

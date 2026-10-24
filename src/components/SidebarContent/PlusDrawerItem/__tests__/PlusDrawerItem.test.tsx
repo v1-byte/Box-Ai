@@ -61,7 +61,7 @@ describe('PlusDrawerItem', () => {
     setShipOverride(['handsFreeVoice']);
     const {getByTestId, getByText} = renderItem();
 
-    expect(getByText('PocketPal Plus')).toBeTruthy();
+    expect(getByText('Box AI Plus')).toBeTruthy();
     expect(getByTestId('drawer-item-plus-subtitle')).toHaveTextContent(
       'Hands-free voice',
     );
@@ -138,7 +138,7 @@ describe('PlusDrawerItem', () => {
       'Unlocked',
     );
     expect(getByTestId('drawer-item-plus').props.accessibilityLabel).toBe(
-      'PocketPal Plus',
+      'Box AI Plus',
     );
     expect(getByTestId('drawer-item-plus').props.accessibilityValue).toEqual({
       text: 'Unlocked',

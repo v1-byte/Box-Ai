@@ -28,7 +28,7 @@ jest.mock('../../services/DeepLinkService', () => ({
   },
 }));
 
-const URL = 'pocketpal://e2e/plus-feature';
+const URL = 'boxai://e2e/plus-feature';
 
 describe('useDeepLinking — Plus test feature (Android Linking)', () => {
   let getInitialURLSpy: jest.SpyInstance;

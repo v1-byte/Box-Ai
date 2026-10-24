@@ -85,7 +85,7 @@ describe('ChatScreen', () => {
     const input = getByPlaceholderText(l10n.en.chat.typeYourMessage);
 
     await act(async () => {
-      fireEvent.changeText(input, 'Hello, PocketPal AI!');
+      fireEvent.changeText(input, 'Hello, Box AI!');
     });
 
     const sendButton = getByTestId('send-button');
@@ -95,7 +95,7 @@ describe('ChatScreen', () => {
       expect(chatSessionStore.addMessageToCurrentSession).toHaveBeenCalledWith(
         expect.objectContaining({
           author: expect.objectContaining({id: 'y9d7f8pgn'}),
-          text: 'Hello, PocketPal AI!',
+          text: 'Hello, Box AI!',
         }),
       );
     });
@@ -130,7 +130,7 @@ describe('ChatScreen', () => {
     const input = getByPlaceholderText(l10n.en.chat.typeYourMessage);
 
     await act(async () => {
-      fireEvent.changeText(input, 'Hello, PocketPal!');
+      fireEvent.changeText(input, 'Hello, Box AI!');
     });
 
     const sendButton = getByTestId('send-button');

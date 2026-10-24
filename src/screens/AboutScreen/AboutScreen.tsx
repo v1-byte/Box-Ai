@@ -58,13 +58,13 @@ export const AboutScreen: React.FC = () => {
       id: 'privacy',
       label: l10n.about.privacyPolicy,
       role: 'link',
-      onPress: () => Linking.openURL('https://pocketpal.dev/privacy-policy'),
+      onPress: () => Linking.openURL('https://github.com/v1-byte/Box-Ai/privacy-policy'),
     },
     {
       id: 'terms',
       label: l10n.about.termsOfService,
       role: 'link',
-      onPress: () => Linking.openURL('https://pocketpal.dev/terms'),
+      onPress: () => Linking.openURL('https://github.com/v1-byte/Box-Ai/terms'),
     },
     {
       id: 'notices',
@@ -141,7 +141,7 @@ export const AboutScreen: React.FC = () => {
           <View style={styles.header}>
             <View style={styles.headerContent}>
               <Text variant="titleLarge" style={styles.title}>
-                PocketPal AI
+                Box AI
               </Text>
               <Text variant="bodyMedium" style={styles.description}>
                 {l10n.about.description}

@@ -1,4 +1,11 @@
 {
   "name": "BoxAI",
-  "displayName": "Box AI"
+  "displayName": "Box AI",
+  "slug": "box-ai",
+  "ios": {
+    "bundleIdentifier": "com.v1byte.boxai"
+  },
+  "android": {
+    "package": "com.v1byte.boxai"
+  }
 }
