@@ -1,50 +1,114 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# OSX
+#
 .DS_Store
-.atom/
-.buildlog/
-.history
-.svn/
-migrate_working_dir/
 
-# IntelliJ related
+# Xcode
+#
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+**/.xcode.env.local
+ios/dist
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
 *.iml
-*.ipr
-*.iws
-.idea/
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+.kotlin/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# node.js
+#
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+.yarn
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-/build/
+# fastlane
+#
+# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
+# screenshots whenever they are needed.
+# For more information about the recommended setup visit:
+# https://docs.fastlane.tools/best-practices/source-control/
 
-# Web related
-lib/generated_plugin_registrant.dart
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
 
-# Symbolication related
-app.*.symbols
+# Bundle artifact
+*.jsbundle
 
-# Obfuscation related
-app.*.map.json
+# Ruby / CocoaPods
+**/Pods/
+/vendor/bundle/
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Temporary files created by Metro to check the health of the file watcher
+.metro-health-check*
 
-# Scripts
-/server
+# testing
+/coverage
+.reassure/
+.env
+
+# Firebase config files (prod + all flavor-specific overrides)
+android/app/**/google-services.json
+ios/GoogleService-Info.plist
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# environment config
+ios/Config/Env.xcconfig
+
+# Android native libraries (should not be committed)
+**/libggml-htp*.so
+
+# E2E debug output
+e2e/debug-output/
+e2e/device-farm-artifacts/
+e2e/test-package.zip
+e2e/testspec-*-allmodels.yml
+
+# E2E pipeline
+e2e/devices.json
+e2e/reports/
+e2e/dist/
+
+# Per-task one-shot visual-capture specs. Authored in the worktree for a
+# single PR review (pre/post diff against main), never committed. They die
+# with the worktree.
+e2e/specs/visual-capture/TASK-*.spec.ts
+
+# Android build log and payload-check report, written by both the CI and
+# release workflows and reproducible locally. The build log can contain the
+# gradle command line, so it is never committed.
+android/android-build.log
+/payload-report.txt
+
+# Dev-team workflow control-plane artefacts (story docs, designer asks,
+# screenshot inventories). Live in the dev-team repo and are sometimes
+# synced into the worktree for local reference; never committed here.
+workflows/
