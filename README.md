@@ -1,5 +1,8 @@
 <div align="center">
 
+> **Tampilan utama (Android APK shell):** folder [`BoxAI-Android/`](./BoxAI-Android) — WebView + UI HTML. Preview web: [`ui-preview/`](./ui-preview).
+
+
 <img src="src/assets/pocketpal-dark-v2.png" alt="Box AI logo" width="120" />
 
 # Box AI
