@@ -1067,6 +1067,51 @@
     s.className = 'rip'; s.style.cssText = `left:${e.clientX - r.left}px;top:${e.clientY - r.top}px`;
     b.appendChild(s); setTimeout(() => s.remove(), 650);
   });
+  /* ================= KEYBOARD / SAFE AREA (anti bentrok HP) ================= */
+  (function setupKeyboard() {
+    const app = document.getElementById('app');
+    if (!app) return;
+    function applyKb() {
+      const h = typeof window.__kbHeight === 'number' ? window.__kbHeight : 0;
+      document.documentElement.style.setProperty('--kb', (h > 0 ? h : 0) + 'px');
+      if (h > 40) app.classList.add('kb-open');
+      else app.classList.remove('kb-open');
+      // Scroll pesan ke bawah saat keyboard buka
+      const msgs = document.querySelector('.messages');
+      if (msgs && h > 40) setTimeout(() => { msgs.scrollTop = msgs.scrollHeight; }, 80);
+    }
+    window.addEventListener('boxkb', applyKb);
+    // Fallback visualViewport (beberapa WebView)
+    if (window.visualViewport) {
+      const vv = window.visualViewport;
+      const onVV = () => {
+        const diff = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        if (typeof window.__kbHeight !== 'number' || window.__kbHeight < 10) {
+          window.__kbHeight = Math.round(diff);
+          applyKb();
+        }
+      };
+      vv.addEventListener('resize', onVV);
+      vv.addEventListener('scroll', onVV);
+    }
+    // Focus input → pastikan terlihat
+    document.addEventListener('focusin', e => {
+      if (e.target && (e.target.matches('input, textarea') || e.target.isContentEditable)) {
+        setTimeout(() => {
+          try { e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+        }, 300);
+      }
+    });
+    document.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (!document.activeElement || !document.activeElement.matches('input, textarea')) {
+          window.__kbHeight = 0;
+          applyKb();
+        }
+      }, 120);
+    });
+  })();
+
   /* ================= INIT ================= */
   syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); } });

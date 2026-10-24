@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -14,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import android.app.ActivityManager
 import android.app.DownloadManager
@@ -38,16 +40,36 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        webView = WebView(this).apply { setBackgroundColor(Color.parseColor("#08090C")) }
+        // Edge-to-edge: biarkan WebView full screen, safe-area diurus CSS
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.isAppearanceLightStatusBars = false
+        controller.isAppearanceLightNavigationBars = false
+
+        webView = WebView(this).apply {
+            setBackgroundColor(Color.parseColor("#08090C"))
+            // Jangan pakai padding native untuk system bars — CSS env(safe-area) sudah cukup
+            fitsSystemWindows = false
+        }
         setContentView(webView)
 
+        // Hanya pad bottom saat keyboard muncul (IME). System bars → CSS.
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime()
-            )
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            // Keyboard: naikkan konten. System bars: biarkan 0 (CSS handle).
+            val bottom = if (ime.bottom > 0) ime.bottom else 0
+            v.setPadding(0, 0, 0, bottom)
+            // Kirim tinggi keyboard ke JS agar composer bisa menyesuaikan
+            val kb = (ime.bottom / resources.displayMetrics.density).toInt()
+            webView.evaluateJavascript("window.__kbHeight=$kb;window.dispatchEvent(new Event('boxkb'));", null)
             WindowInsetsCompat.CONSUMED
         }
 
@@ -63,6 +85,12 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             textZoom = 100
+            // Performa & kompatibilitas
+            cacheMode = WebSettings.LOAD_DEFAULT
+            mediaPlaybackRequiresUserGesture = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                safeBrowsingEnabled = false
+            }
         }
 
         webView.addJavascriptInterface(
@@ -77,8 +105,18 @@ class MainActivity : AppCompatActivity() {
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (request.url.host == "appassets.androidplatform.net") return false
-                startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                try { startActivity(Intent(Intent.ACTION_VIEW, request.url)) } catch (_: Exception) {}
                 return true
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                // Pastikan safe-area CSS aktif setelah load
+                view?.evaluateJavascript(
+                    """
+                    document.documentElement.style.setProperty('--sat', getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-top)') || '0px');
+                    document.documentElement.style.setProperty('--sab', getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-bottom)') || '0px');
+                    """.trimIndent(), null
+                )
             }
         }
 
@@ -123,12 +161,10 @@ class Bridge(
     private fun clean(s: String) = s.replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&quot;", "\"")
         .replace("&#x27;", "'").replace("&lt;", "<").replace("&gt;", ">").trim()
 
-    // ── LLM engine state ──────────────────────────────────────────────
     @Volatile private var currentModel: LlamaModel? = null
     @Volatile private var currentModelPath: String? = null
     private val engineLock = Any()
 
-    /** Pencarian web (DuckDuckGo, tanpa API key). */
     @JavascriptInterface fun webSearch(id: Int, query: String) {
         Thread {
             val out = JSONObject().put("results", JSONArray())
@@ -154,14 +190,8 @@ class Bridge(
         }.start()
     }
 
-    /** Mesin LLM tersedia (llama.cpp via llama-android). */
     @JavascriptInterface fun engineAvailable(): Boolean = true
 
-    /**
-     * Generate jawaban dari model.
-     * JSON input: { model, messages: [{role,content}], temp, top_p, max_tokens, n_ctx }
-     * Streaming ke JS lewat window.BoxEngine.token / done / error
-     */
     @JavascriptInterface fun generate(json: String) {
         scope.launch(Dispatchers.Default) {
             try {
@@ -183,7 +213,6 @@ class Bridge(
                 val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
                 val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
 
-                // Load / reuse model
                 val model = synchronized(engineLock) {
                     val path = modelFile.absolutePath
                     if (currentModel != null && currentModelPath == path) {
@@ -205,7 +234,6 @@ class Bridge(
                     }
                 }
 
-                // Build prompt dari messages
                 val messages = o.optJSONArray("messages") ?: JSONArray()
                 var systemPrompt = ""
                 val userParts = mutableListOf<String>()
@@ -220,7 +248,6 @@ class Bridge(
                     }
                 }
                 val prompt = userParts.lastOrNull() ?: ""
-                // Include short history for context
                 val history = if (userParts.size > 1) {
                     userParts.dropLast(1).takeLast(4).joinToString("\n")
                 } else ""
@@ -233,25 +260,23 @@ class Bridge(
                     maxTokens = maxTok,
                 )
 
-                // Simulate streaming for better UX (free version has no real stream)
                 val text = result.text.trim()
                 if (text.isEmpty()) {
                     post("window.BoxEngine&&BoxEngine.error('Model tidak menghasilkan jawaban')")
                     return@launch
                 }
-                val chunkSize = 8
+                val chunkSize = 6
                 var i = 0
                 while (i < text.length) {
                     val end = minOf(i + chunkSize, text.length)
                     val chunk = text.substring(i, end)
-                    // Escape for JS string
                     val esc = chunk
                         .replace("\\", "\\\\")
                         .replace("'", "\\'")
                         .replace("\n", "\\n")
                         .replace("\r", "")
                     post("window.BoxEngine&&BoxEngine.token('$esc')")
-                    delay(12)
+                    delay(10)
                     i = end
                 }
                 post("window.BoxEngine&&BoxEngine.done()")
@@ -262,7 +287,6 @@ class Bridge(
         }
     }
 
-    /** Unload model dari memori (panggil dari Settings jika perlu). */
     @JavascriptInterface fun unloadModel() {
         scope.launch(Dispatchers.Default) {
             synchronized(engineLock) {
