@@ -8,7 +8,12 @@ class Globals {
 
   // this will be overridden in splash screen init
   static AppSettings appSettings = AppSettings(
-      maxTokensCount: 1500, openAiApiKey: null, aiForumUsername: '- Box AI');
+    maxTokensCount: 1500,
+    openAiApiKey: null,
+    aiForumUsername: '- Box AI',
+    githubToken: null,
+    cloudflareToken: null,
+  );
 
   static int maxFreeSessions = 10;
 }

@@ -26,4 +26,6 @@ class SharedPrefsKeys {
   static String maxTokensCount = 'maxTokensCount';
   static String openAiApiKey = 'openAiApiKey';
   static String aiForumUsername = 'aiForumUsername';
+  static String githubToken = 'githubToken';
+  static String cloudflareToken = 'cloudflareToken';
 }

@@ -1,34 +1,65 @@
-# Box AI — System Connector
+# Box AI — System Connector (Full)
 
-Box AI menggunakan sistem **Connector** sederhana agar user bisa menghubungkan layanan eksternal dengan cara:
+Box AI punya **System Connector** bawaan. User cukup:
 
-1. **Klik** di Settings
-2. **Paste Token** (API Key)
+1. Buka **Settings & Connectors**
+2. **Paste token** di connector yang diinginkan
 3. Tekan **Connect**
 
-## OpenAI Connector (saat ini)
+Status langsung berubah jadi **Connected** (hijau).
 
-| Langkah | Aksi |
-|---------|------|
-| 1 | Buka menu **Settings & Connectors** |
-| 2 | Paste OpenAI API Key (`sk-...`) di kolom yang tersedia |
-| 3 | Tekan tombol **Connect** |
-| 4 | Status berubah menjadi **Connected** (hijau) |
+---
 
-Token disimpan secara lokal di device (SharedPreferences) dan **tidak** dikirim ke server Box AI.
+## Connector yang tersedia
 
-### Cara mendapatkan OpenAI API Key
-1. Buka https://platform.openai.com/api-keys
-2. Buat key baru
-3. Copy → Paste di app
+### 1. OpenAI Connector (Wajib)
+- **Untuk**: Chat bot, content generator, todos manager
+- **Token**: OpenAI API Key (`sk-...`)
+- **Cara dapat**: https://platform.openai.com/api-keys
 
-## Connector lain (rencana)
-- Cloudflare / cloudflared
-- GitHub
-- Lainnya bisa ditambahkan di masa depan
+### 2. GitHub Connector
+- **Untuk**: Integrasi repo, automation, future features
+- **Token**: Personal Access Token (`ghp_...` atau `github_pat_...`)
+- **Cara dapat**: GitHub → Settings → Developer settings → Personal access tokens
+- Permission yang disarankan: `repo`, `read:user`
 
-## Untuk Developer
-Lihat file:
-- `lib/src/modules/settings/screens/settings_screen.dart` → UI Connector
-- `lib/src/globals.dart` → penyimpanan state
-- `DEPLOY.md` → cara deploy + tunnel
+### 3. Cloudflare Connector
+- **Untuk**: Cloudflare Tunnel / cloudflared, future CDN features
+- **Token**: Cloudflare API Token
+- **Cara dapat**: Cloudflare Dashboard → My Profile → API Tokens
+
+---
+
+## Alur di App
+
+```
+Settings & Connectors
+├── OpenAI        [Paste sk-...]     → Connect / Disconnect
+├── GitHub        [Paste ghp_...]    → Connect / Disconnect
+└── Cloudflare    [Paste token]      → Connect / Disconnect
+```
+
+Semua token disimpan **lokal** di device (SharedPreferences) dan **tidak** dikirim ke server Box AI.
+
+---
+
+## File terkait (Developer)
+
+| File | Fungsi |
+|------|--------|
+| `lib/src/modules/settings/screens/settings_screen.dart` | UI System Connector |
+| `lib/src/modules/settings/models/app_settings.dart` | Model (openAiApiKey, githubToken, cloudflareToken) |
+| `lib/src/globals.dart` | State global |
+| `lib/src/utils/common.dart` | Save / Load SharedPreferences |
+| `lib/src/constants.dart` | SharedPrefsKeys |
+| `cloudflared-config.example.yml` | Contoh config tunnel |
+| `DEPLOY.md` | Panduan deploy + tunnel |
+
+---
+
+## Cara menambah Connector baru
+
+1. Tambah field di `AppSettings`
+2. Tambah key di `SharedPrefsKeys`
+3. Update `saveAppSettingsToSharedPres` & `getAppSettingsFromSharedPrefs`
+4. Tambah card di `settings_screen.dart` memakai `_buildConnectorCard`

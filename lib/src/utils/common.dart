@@ -116,6 +116,10 @@ void saveAppSettingsToSharedPres(AppSettings appSettings) async {
       SharedPrefsKeys.openAiApiKey, appSettings.openAiApiKey ?? '');
   await prefs.setString(
       SharedPrefsKeys.aiForumUsername, appSettings.aiForumUsername ?? '');
+  await prefs.setString(
+      SharedPrefsKeys.githubToken, appSettings.githubToken ?? '');
+  await prefs.setString(
+      SharedPrefsKeys.cloudflareToken, appSettings.cloudflareToken ?? '');
 }
 
 Future<AppSettings> getAppSettingsFromSharedPrefs() async {
@@ -124,6 +128,8 @@ Future<AppSettings> getAppSettingsFromSharedPrefs() async {
     maxTokensCount: prefs.getInt(SharedPrefsKeys.maxTokensCount) ?? 1500,
     openAiApiKey: prefs.getString(SharedPrefsKeys.openAiApiKey),
     aiForumUsername: prefs.getString(SharedPrefsKeys.aiForumUsername),
+    githubToken: prefs.getString(SharedPrefsKeys.githubToken),
+    cloudflareToken: prefs.getString(SharedPrefsKeys.cloudflareToken),
   );
 }
 
