@@ -13,6 +13,7 @@ class CustomTextFormField extends StatelessWidget {
   final int? maxLines;
   final Color fillColor;
   final Widget? prefixIcon;
+  final bool obscureText;
 
   const CustomTextFormField(
       {super.key,
@@ -26,7 +27,8 @@ class CustomTextFormField extends StatelessWidget {
       this.minLines,
       this.maxLines,
       this.fillColor = CustomColors.secondary,
-      this.prefixIcon});
+      this.prefixIcon,
+      this.obscureText = false});
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,7 @@ class CustomTextFormField extends StatelessWidget {
       enabled: enabled,
       minLines: minLines,
       maxLines: maxLines,
+      obscureText: obscureText,
       decoration: InputDecoration(
           prefixIcon: prefixIcon,
           filled: true,

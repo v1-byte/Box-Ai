@@ -28,6 +28,7 @@ class _SettingsScreen extends State<SettingsScreen> {
   TextEditingController aiForumUsernameController = TextEditingController();
   String appVersion = '';
   String buildNumber = '';
+  bool isConnected = false;
 
   @override
   void initState() {
@@ -38,6 +39,8 @@ class _SettingsScreen extends State<SettingsScreen> {
     }
     maxTokensController.text = Globals.appSettings.maxTokensCount.toString();
     aiForumUsernameController.text = Globals.appSettings.aiForumUsername ?? '';
+    isConnected = (Globals.appSettings.openAiApiKey != null &&
+        Globals.appSettings.openAiApiKey!.isNotEmpty);
     PackageInfo.fromPlatform().then((PackageInfo packageInfo) {
       setState(() {
         appVersion = packageInfo.version;
@@ -47,14 +50,14 @@ class _SettingsScreen extends State<SettingsScreen> {
     logEvent(EventNames.settingsScreenViewed, {});
   }
 
-  void onUpdateSettingsOress() async {
-    String openAiApiKey = apiKeyController.text;
+  void onConnectPressed() async {
+    String openAiApiKey = apiKeyController.text.trim();
     if (openAiApiKey.isEmpty) {
-      showSnackBar(context, message: 'API key is mandatory');
+      showSnackBar(context, message: 'Please paste your API key first');
       return;
     }
     logEvent(EventNames.updateSettingsClicked, {});
-    int maxTokensCount = int.parse(maxTokensController.text);
+    int maxTokensCount = int.tryParse(maxTokensController.text) ?? 1500;
     String aiForumUsername = aiForumUsernameController.text;
     AppSettings updatedAppSettings = AppSettings(
         maxTokensCount: maxTokensCount,
@@ -63,7 +66,24 @@ class _SettingsScreen extends State<SettingsScreen> {
     Globals.appSettings = updatedAppSettings;
 
     saveAppSettingsToSharedPres(updatedAppSettings);
-    showSnackBar(context, message: 'Changes saved successfully!');
+    setState(() {
+      isConnected = true;
+    });
+    showSnackBar(context, message: '✅ Connected successfully!');
+  }
+
+  void onDisconnectPressed() async {
+    AppSettings updatedAppSettings = AppSettings(
+        maxTokensCount: Globals.appSettings.maxTokensCount,
+        openAiApiKey: null,
+        aiForumUsername: Globals.appSettings.aiForumUsername);
+    Globals.appSettings = updatedAppSettings;
+    saveAppSettingsToSharedPres(updatedAppSettings);
+    apiKeyController.clear();
+    setState(() {
+      isConnected = false;
+    });
+    showSnackBar(context, message: 'Disconnected');
   }
 
   void onKnowledgeCenterPress() {
@@ -78,10 +98,10 @@ class _SettingsScreen extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return (Scaffold(
+    return Scaffold(
       appBar: AppBar(
         title: const Heading(
-          'Settings',
+          'Settings & Connectors',
           type: HeadingType.h4,
         ),
         backgroundColor: CustomColors.darkBackground,
@@ -93,42 +113,109 @@ class _SettingsScreen extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ===== CONNECTOR SECTION =====
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: isConnected
+                              ? Colors.green.withOpacity(0.6)
+                              : Colors.white24),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isConnected
+                                  ? Icons.check_circle
+                                  : Icons.link_off,
+                              color: isConnected ? Colors.green : Colors.grey,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            CustomText(
+                              isConnected
+                                  ? 'OpenAI Connector — Connected'
+                                  : 'OpenAI Connector — Not Connected',
+                              style: TextStyle(
+                                  color: isConnected
+                                      ? Colors.green
+                                      : Colors.white,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const CustomText(
+                          'Paste your OpenAI API Key below then press Connect',
+                          style: TextStyle(
+                              color: CustomColors.lightText, fontSize: 12),
+                        ),
+                        const SizedBox(height: 12),
+                        CustomTextFormField(
+                            controller: apiKeyController,
+                            onChanged: (value) => {},
+                            hintText: 'sk-... (paste token here)',
+                            obscureText: true,
+                            ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 44,
+                                child: CustomElevatedButton(
+                                    onPressed: onConnectPressed,
+                                    text: isConnected
+                                        ? 'Update Connection'
+                                        : 'Connect'),
+                              ),
+                            ),
+                            if (isConnected) ...[
+                              const SizedBox(width: 12),
+                              SizedBox(
+                                height: 44,
+                                child: OutlinedButton(
+                                  onPressed: onDisconnectPressed,
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: Colors.red),
+                                    foregroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Disconnect'),
+                                ),
+                              ),
+                            ]
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // ===== OTHER SETTINGS =====
                   const CustomText(
-                    'OpenAI API Key',
+                    'Max Tokens',
                     style: TextStyle(color: Colors.white),
                   ),
                   Container(
                       margin: const EdgeInsets.only(top: 4),
                       child: const CustomText(
-                        'This key will be saved to your device so that only you can use it. You can get it for free from https://beta.openai.com/account/api-keys',
+                        'Higher value = longer responses (uses more credits)',
                         style: TextStyle(
                             color: CustomColors.lightText, fontSize: 11),
                       )),
                   Container(
                     margin: const EdgeInsets.only(top: 12, bottom: 24),
                     child: CustomTextFormField(
-                        controller: apiKeyController,
-                        onChanged: (value) => {},
-                        hintText: 'sk-T7q1L8p5G****'),
-                  ),
-                  const CustomText(
-                    'Maximum length of AI bot response',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  Container(
-                      margin: const EdgeInsets.only(top: 4),
-                      child: const CustomText(
-                        'The maximum number of tokens to generate. The GPT family of models process text using tokens, which are common sequences of characters found in text. Visit https://platform.openai.com/tokenizer',
-                        style: TextStyle(
-                            color: CustomColors.lightText, fontSize: 11),
-                      )),
-                  Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 24),
-                    child: CustomTextFormField(
-                        textInputType: TextInputType.number,
                         controller: maxTokensController,
                         onChanged: (value) => {},
-                        hintText: '1000'),
+                        hintText: '1500',
+                        textInputType: TextInputType.number),
                   ),
                   const CustomText(
                     'AI forum username',
@@ -149,14 +236,6 @@ class _SettingsScreen extends State<SettingsScreen> {
                         hintText: '- Box AI'),
                   ),
                   Container(
-                    margin: const EdgeInsets.only(top: 36, bottom: 36),
-                    child: SizedBox(
-                        width: double.infinity,
-                        height: 40,
-                        child: CustomElevatedButton(
-                            onPressed: onUpdateSettingsOress, text: 'Update')),
-                  ),
-                  Container(
                       margin: const EdgeInsets.only(top: 12),
                       child: LinkText(
                           text: 'Knowledge Center & FAQs',
@@ -166,7 +245,7 @@ class _SettingsScreen extends State<SettingsScreen> {
                       child: LinkText(
                           text: 'Rate this app', onPress: onRateThisAppPress)),
                   Container(
-                      margin: const EdgeInsets.only(top: 12),
+                      margin: const EdgeInsets.only(top: 24),
                       child: Center(
                           child: CustomText(
                         'Build v$appVersion - $buildNumber',
@@ -177,12 +256,12 @@ class _SettingsScreen extends State<SettingsScreen> {
                       margin: const EdgeInsets.only(top: 8),
                       child: const Center(
                           child: CustomText(
-                        '🇮🇳  Made in India',
+                        'Box AI • Made with ❤️',
                         size: CustomTextSize.small,
                         style: TextStyle(color: CustomColors.lightText),
                       )))
                 ],
               ))),
-    ));
+    );
   }
 }
