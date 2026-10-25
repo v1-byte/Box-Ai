@@ -95,7 +95,7 @@ export function detectSource(path: string): ExternalModelSource {
   return 'local';
 }
 
-const MIN_BYTES = 50 * 1024 * 1024; // 50MB
+const MIN_BYTES = 5 * 1024 * 1024; // 50MB
 
 async function tryRenameTruncated(filePath: string, name: string): Promise<{path: string; name: string}> {
   const fixed = normalizeGgufName(name);

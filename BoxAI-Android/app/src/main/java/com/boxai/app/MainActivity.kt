@@ -33,6 +33,7 @@ import android.Manifest
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.provider.Settings
+import android.provider.MediaStore
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -466,25 +467,75 @@ class Bridge(
         return a.toString()
     }
 
-    /** Wide multi-folder scan for tombol Terunduh / Pindai. NOT used on cold start. */
+    /** MediaStore index — finds .gguf on shared storage even when folder walk fails. */
+    private fun scanMediaStoreGguf(out: MutableList<File>, seen: MutableSet<String>) {
+        try {
+            val uri = MediaStore.Files.getContentUri("external")
+            val proj = arrayOf(
+                MediaStore.Files.FileColumns.DISPLAY_NAME,
+                MediaStore.Files.FileColumns.SIZE,
+                MediaStore.Files.FileColumns.DATE_MODIFIED,
+                MediaStore.Files.FileColumns.DATA
+            )
+            // Match *.gguf (case-insensitive via LIKE lower on some devices — try both)
+            val sel = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
+            val args = arrayOf("%.gguf", "%.GGUF")
+            ctx.contentResolver.query(uri, proj, sel, args, null)?.use { c ->
+                val iName = c.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                val iSize = c.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
+                @Suppress("DEPRECATION")
+                val iData = c.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                while (c.moveToNext()) {
+                    val name = if (iName >= 0) c.getString(iName) ?: continue else continue
+                    if (!name.endsWith(".gguf", true)) continue
+                    val size = if (iSize >= 0) c.getLong(iSize) else 0L
+                    if (size > 0 && size < 5L * 1024L * 1024L) continue
+                    val path = if (iData >= 0) c.getString(iData) else null
+                    if (path.isNullOrBlank()) continue
+                    val f = File(path)
+                    if (!f.isFile || f.length() < 1024) continue
+                    val key = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
+                    if (seen.add(key)) out.add(f)
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
+    /** Wide multi-folder + MediaStore scan for tombol Terunduh / Pindai. */
     @JavascriptInterface fun listModelsDeep(): String {
         val busy = busyNames()
         val seenPath = HashSet<String>()
         val files = mutableListOf<File>()
+
+        // 1) MediaStore (shared storage index — works with All files / media perms)
+        scanMediaStoreGguf(files, seenPath)
+
+        // 2) Public standard dirs
+        try {
+            listOf(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+            ).forEach { pub ->
+                if (pub != null && pub.isDirectory) scanGguf(pub, 3, files, seenPath)
+            }
+        } catch (_: Exception) { }
+
+        // 3) Known roots (Pocket AI, model ai, …)
         for (root in modelScanRoots()) {
             val depth = when {
-                root.absolutePath.contains("Android/data") -> 3
-                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 2
-                root.name.contains("model", true) || root.name.equals("Models", true) -> 3
-                else -> 2
+                root.absolutePath.contains("Android/data") -> 4
+                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 3
+                root.name.contains("model", true) || root.name.equals("Models", true) -> 4
+                else -> 3
             }
             scanGguf(root, depth, files, seenPath)
         }
-        // Dedup by lowercase filename — keep largest (most complete)
+
+        // Dedup by lowercase filename — keep largest
         val best = LinkedHashMap<String, File>()
         for (f in files) {
             if (f.name in busy) continue
-            if (f.length() < 50L * 1024L * 1024L) continue // skip < 50MB
+            if (f.length() < 5L * 1024L * 1024L) continue
             val key = f.name.lowercase()
             val prev = best[key]
             if (prev == null || f.length() > prev.length()) best[key] = f
@@ -496,7 +547,7 @@ class Bridge(
                 path.contains("pocketai", true) || path.contains("pocketpal", true) -> "pocketai"
                 path.contains("Android/data", true) -> "other_app"
                 path.contains("Download", true) -> "download"
-                path.contains("model ai", true) || path.contains("Models", true) -> "external"
+                path.contains("model ai", true) || path.contains("/Models", true) -> "external"
                 path.contains(dir().absolutePath) -> "boxai"
                 else -> "local"
             }
@@ -510,6 +561,40 @@ class Bridge(
             )
         }
         return a.toString()
+    }
+
+    /** Debug: permission + how many roots readable + MediaStore hits (for toast). */
+    @JavascriptInterface fun scanDebug(): String {
+        val o = JSONObject()
+        try {
+            o.put("allFiles", if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager() else true)
+            o.put("sdk", Build.VERSION.SDK_INT)
+            val roots = modelScanRoots()
+            o.put("roots", roots.size)
+            var readable = 0
+            val samples = JSONArray()
+            for (r in roots) {
+                val can = r.canRead() && (r.listFiles()?.isNotEmpty() == true)
+                if (can) {
+                    readable++
+                    if (samples.length() < 8) samples.put(r.absolutePath)
+                }
+            }
+            o.put("rootsReadable", readable)
+            o.put("sampleRoots", samples)
+            val seen = HashSet<String>()
+            val media = mutableListOf<File>()
+            scanMediaStoreGguf(media, seen)
+            o.put("mediaStoreGguf", media.size)
+            val deep = try { JSONArray(listModelsDeep()).length() } catch (_: Exception) { -1 }
+            o.put("deepTotal", deep)
+            o.put("modelsDir", dir().absolutePath)
+            val local = dir().listFiles()?.count { it.name.endsWith(".gguf", true) } ?: 0
+            o.put("appModels", local)
+        } catch (e: Exception) {
+            o.put("error", e.message ?: "err")
+        }
+        return o.toString()
     }
 
     /** Minta izin baca storage agar scan Download/folder lain bisa jalan. */

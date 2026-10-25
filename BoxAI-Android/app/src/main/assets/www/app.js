@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.14';
+  const APP_VERSION = '2.2.15';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -382,7 +382,7 @@
     const have = new Set();
     a.forEach(f => {
       if (!f || !f.name) return;
-      if ((f.size || 0) > 0 && f.size < 50 * 1048576) return; // skip < 50MB
+      if ((f.size || 0) > 0 && f.size < 5 * 1048576) return; // skip < 5MB
       const id = modelId(f.name);
       have.add(id);
       const src = f.source || srcDefault || 'local';
@@ -704,11 +704,22 @@
       }
       toast('Memindai semua model di perangkat…');
       await sleep(80);
+      let dbg = {};
+      try { dbg = JSON.parse(NATIVE.scanDebug ? NATIVE.scanDebug() : '{}'); } catch (e) {}
       const n = syncLocalDeep();
       renderModels();
       renderSettings();
       updateTop();
-      toast(n ? (n + ' model ditemukan (Pocket AI / Download / folder lain)') : 'Tidak ada .gguf ≥50MB. Izinkan akses semua file, atau letakkan di /model ai/');
+      if (n) {
+        toast(n + ' model ditemukan');
+      } else {
+        const tips = [];
+        if (dbg.allFiles === false) tips.push('All files access BELUM aktif untuk Box AI');
+        if (dbg.mediaStoreGguf === 0) tips.push('MediaStore 0 file .gguf');
+        if (dbg.rootsReadable === 0) tips.push('folder scan tidak terbaca');
+        tips.push('Salin .gguf ke /Download atau /model ai/ lalu pindai lagi');
+        toast('Tidak ketemu. ' + tips.join(' · '));
+      }
     }
   };
   $$('[data-set]').forEach(el => el.addEventListener('click', () => ACTIONS[el.dataset.set] && ACTIONS[el.dataset.set]()));
