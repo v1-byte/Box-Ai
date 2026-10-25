@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -20,8 +19,10 @@ import androidx.webkit.WebViewAssetLoader
 import android.app.ActivityManager
 import android.app.DownloadManager
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.StatFs
 import android.webkit.JavascriptInterface
 import org.json.JSONArray
@@ -43,7 +44,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Edge-to-edge: biarkan WebView full screen, safe-area diurus CSS
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -57,21 +57,37 @@ class MainActivity : AppCompatActivity() {
 
         webView = WebView(this).apply {
             setBackgroundColor(Color.parseColor("#08090C"))
-            // Jangan pakai padding native untuk system bars — CSS env(safe-area) sudah cukup
             fitsSystemWindows = false
         }
         setContentView(webView)
 
-        // Hanya pad bottom saat keyboard muncul (IME). System bars → CSS.
+        // Kirim inset nyata ke CSS (WebView sering tidak isi env(safe-area))
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            // Keyboard: naikkan konten. System bars: biarkan 0 (CSS handle).
-            val bottom = if (ime.bottom > 0) ime.bottom else 0
-            v.setPadding(0, 0, 0, bottom)
-            // Kirim tinggi keyboard ke JS agar composer bisa menyesuaikan
-            val kb = (ime.bottom / resources.displayMetrics.density).toInt()
-            webView.evaluateJavascript("window.__kbHeight=$kb;window.dispatchEvent(new Event('boxkb'));", null)
+            val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val dens = resources.displayMetrics.density
+            val top = maxOf(sys.top, cut.top) / dens
+            val bottom = maxOf(sys.bottom, cut.bottom) / dens
+            val left = maxOf(sys.left, cut.left) / dens
+            val right = maxOf(sys.right, cut.right) / dens
+            val kb = ime.bottom / dens
+            // Jangan pad WebView — CSS yang atur layout
+            v.setPadding(0, 0, 0, 0)
+            val js = """
+                (function(){
+                  var r=document.documentElement.style;
+                  r.setProperty('--sat','${"%.1f".format(top)}px');
+                  r.setProperty('--sab','${"%.1f".format(bottom)}px');
+                  r.setProperty('--sal','${"%.1f".format(left)}px');
+                  r.setProperty('--sar','${"%.1f".format(right)}px');
+                  r.setProperty('--kb','${"%.1f".format(if (kb > 0) kb else 0f)}px');
+                  window.__kbHeight=${if (kb > 40) kb.toInt() else 0};
+                  window.dispatchEvent(new Event('boxkb'));
+                  window.dispatchEvent(new Event('boxinsets'));
+                })();
+            """.trimIndent()
+            webView.evaluateJavascript(js, null)
             WindowInsetsCompat.CONSUMED
         }
 
@@ -87,7 +103,6 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             textZoom = 100
-            // Performa & kompatibilitas
             cacheMode = WebSettings.LOAD_DEFAULT
             mediaPlaybackRequiresUserGesture = false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -112,13 +127,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                // Pastikan safe-area CSS aktif setelah load
-                view?.evaluateJavascript(
-                    """
-                    document.documentElement.style.setProperty('--sat', getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-top)') || '0px');
-                    document.documentElement.style.setProperty('--sab', getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-bottom)') || '0px');
-                    """.trimIndent(), null
-                )
+                // Paksa request ulang insets setelah page load
+                ViewCompat.requestApplyInsets(webView)
             }
         }
 
@@ -150,7 +160,6 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-/** Jembatan JS <-> Android: unduhan model, file, info perangkat, dan mesin LLM (llama.cpp). */
 class Bridge(
     private val ctx: Context,
     private val scope: CoroutineScope,
@@ -299,52 +308,108 @@ class Bridge(
         }
     }
 
-    private fun activeNames(): Set<String> {
+    /** Nama file yang sedang diunduh (pending/running/paused) — jangan tampilkan dulu. */
+    private fun busyNames(): Set<String> {
         val out = HashSet<String>()
         try {
             dm.query(DownloadManager.Query().setFilterByStatus(
-                DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED)).use { c ->
+                DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED
+            )).use { c ->
                 val i = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                while (c.moveToNext()) c.getString(i)?.let { out.add(Uri.parse(it).lastPathSegment ?: "") }
+                val t = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                while (c.moveToNext()) {
+                    c.getString(i)?.let { out.add(Uri.parse(it).lastPathSegment ?: "") }
+                    c.getString(t)?.let { if (it.endsWith(".gguf", true)) out.add(it) }
+                }
             }
-        } catch (e: Exception) { }
+        } catch (_: Exception) { }
         return out
     }
 
+    /**
+     * Scan folder models + pastikan unduhan sukses ikut terdeteksi.
+     * Juga pindahkan file dari lokasi DownloadManager jika masih di path lain.
+     */
     @JavascriptInterface fun listModels(): String {
-        val busy = activeNames(); val a = JSONArray()
-        dir().listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) && it.name !in busy }
-            ?.sortedBy { it.name }?.forEach {
-                a.put(JSONObject().put("name", it.name).put("size", it.length()).put("mod", it.lastModified()))
+        val d = dir()
+        val busy = busyNames()
+        val seen = HashSet<String>()
+        val a = JSONArray()
+
+        // 1) File di folder app
+        d.listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) && it.length() > 1024 }?.forEach { f ->
+            if (f.name !in busy && seen.add(f.name)) {
+                a.put(JSONObject().put("name", f.name).put("size", f.length()).put("mod", f.lastModified()))
             }
+        }
+
+        // 2) Unduhan sukses yang mungkin belum terlihat / path beda
+        try {
+            dm.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL)).use { c ->
+                val uriIdx = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                val titleIdx = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                val sizeIdx = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                while (c.moveToNext()) {
+                    val title = c.getString(titleIdx) ?: ""
+                    val local = c.getString(uriIdx) ?: ""
+                    val name = when {
+                        title.endsWith(".gguf", true) -> title
+                        else -> Uri.parse(local).lastPathSegment ?: ""
+                    }
+                    if (!name.endsWith(".gguf", true) || !safe(name) || name in seen) continue
+                    val dest = File(d, name)
+                    if (!dest.exists() || dest.length() < 1024) {
+                        // Coba salin dari URI lokal DownloadManager
+                        try {
+                            val srcUri = Uri.parse(local)
+                            ctx.contentResolver.openInputStream(srcUri)?.use { input ->
+                                dest.outputStream().use { output -> input.copyTo(output) }
+                            }
+                        } catch (_: Exception) { }
+                    }
+                    if (dest.exists() && dest.length() > 1024 && seen.add(name)) {
+                        a.put(JSONObject().put("name", name).put("size", dest.length()).put("mod", dest.lastModified()))
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+
         return a.toString()
     }
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
         if (!safe(name)) return -1L
-        File(dir(), name).delete()
-        val r = DownloadManager.Request(Uri.parse(url)).setTitle(name)
+        val d = dir()
+        File(d, name).delete()
+        val r = DownloadManager.Request(Uri.parse(url))
+            .setTitle(name)
+            .setDescription("Box AI model")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
             .setDestinationInExternalFilesDir(ctx, "models", name)
         if (token.isNotBlank()) r.addRequestHeader("Authorization", "Bearer $token")
-        return dm.enqueue(r)
+        r.addRequestHeader("User-Agent", "BoxAI/2.2 Android")
+        return try { dm.enqueue(r) } catch (e: Exception) { -1L }
     }
 
     @JavascriptInterface fun status(id: Long): String {
-        val o = JSONObject().put("s", 0)
+        val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L)
         try {
             dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
                 if (c.moveToFirst()) {
                     o.put("s", c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)))
                     o.put("b", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
                     o.put("t", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
+                    val reason = c.getColumnIndex(DownloadManager.COLUMN_REASON)
+                    if (reason >= 0) o.put("r", c.getInt(reason))
                 }
             }
-        } catch (e: Exception) { }
+        } catch (_: Exception) { }
         return o.toString()
     }
 
-    @JavascriptInterface fun cancel(id: Long) { try { dm.remove(id) } catch (e: Exception) { } }
+    @JavascriptInterface fun cancel(id: Long) { try { dm.remove(id) } catch (_: Exception) { } }
     @JavascriptInterface fun deleteModel(name: String): Boolean = safe(name) && File(dir(), name).delete()
     @JavascriptInterface fun renameModel(old: String, new: String): Boolean =
         safe(old) && safe(new) && !File(dir(), new).exists() && File(dir(), old).renameTo(File(dir(), new))
@@ -365,10 +430,14 @@ class Bridge(
         return before
     }
 
+    /** Path absolut folder models (debug / pencari). */
+    @JavascriptInterface fun modelsPath(): String = dir().absolutePath
+
     @JavascriptInterface fun info(): String {
         val mi = ActivityManager.MemoryInfo()
         (ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
         val st = StatFs(dir().absolutePath)
+        val files = dir().listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) }?.size ?: 0
         return JSONObject()
             .put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("sdk", Build.VERSION.SDK_INT)
@@ -378,6 +447,8 @@ class Bridge(
             .put("free", st.availableBytes).put("total", st.totalBytes)
             .put("cache", ctx.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() })
             .put("engine", "llama.cpp (llama-android 0.1.1)")
+            .put("modelsDir", dir().absolutePath)
+            .put("modelsCount", files)
             .toString()
     }
 }

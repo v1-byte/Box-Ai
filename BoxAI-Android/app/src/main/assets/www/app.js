@@ -367,15 +367,36 @@
   }
   function syncLocal() {
     if (!NATIVE) return;
-    let a = []; try { a = JSON.parse(NATIVE.listModels()); } catch (e) { }
-    const have = new Set(a.map(f => modelId(f.name)));
-    a.forEach(f => { reg(f.name, f.size, 'local'); S.dl[modelId(f.name)] = true; });
+    let a = [];
+    try { a = JSON.parse(NATIVE.listModels() || '[]'); } catch (e) { a = []; }
+    if (!Array.isArray(a)) a = [];
+    const have = new Set();
+    a.forEach(f => {
+      if (!f || !f.name) return;
+      const id = modelId(f.name);
+      have.add(id);
+      reg(f.name, f.size || 0, 'local');
+      S.dl[id] = true;
+      // Simpan nama file asli agar generate() menemukan path yang benar
+      if (MMETA_DEF[id]) MMETA_DEF[id].file = f.name;
+      else MMETA_DEF[id] = { file: f.name, arch: 'GGUF', quant: 'GGUF', ctx: 4096, tpl: 'chatml' };
+    });
     for (let i = MODELS.length - 1; i >= 0; i--) {
       const m = MODELS[i];
-      if (!have.has(m.id)) { delete S.dl[m.id]; if (dlProg[m.id] == null && m.src !== 'hub') MODELS.splice(i, 1); }
+      // Jangan hapus entri yang sedang diunduh
+      if (!have.has(m.id) && dlProg[m.id] == null) {
+        delete S.dl[m.id];
+        if (m.src !== 'hub' && m.src !== 'local') { /* keep hub catalog */ }
+        else if (m.src === 'local') MODELS.splice(i, 1);
+      }
     }
     if (S.active && !have.has(S.active)) S.active = '';
+    // Auto-aktifkan model pertama jika belum ada yang aktif
+    if (!S.active && have.size) {
+      S.active = [...have][0];
+    }
     save();
+    updateTop();
   }
   const nativeInfo = () => { try { return JSON.parse(NATIVE.info()); } catch (e) { return {}; } };
   const cacheMB = () => (nativeInfo().cache || 0) / 1048576;
@@ -446,11 +467,26 @@
     const did = NATIVE.startDownload(m.url, m.file, S.hfToken || '');
     if (did < 0) return toast('Nama file tidak valid');
     dlProg[id] = 0; renderModels(); toast('Mengunduh ' + m.short);
+    let tries = 0;
     const t = setInterval(() => {
       let s = {}; try { s = JSON.parse(NATIVE.status(did)); } catch (e) { }
-      if (s.s === 8) { clearInterval(t); delete dlProg[id]; syncLocal(); renderModels(); renderSettings(); toast(m.short + ' siap dipakai'); }
-      else if (s.s === 16 || s.s === 0) { clearInterval(t); delete dlProg[id]; syncLocal(); renderModels(); toast('Unduhan gagal. Periksa koneksi atau token HF untuk model gated.'); }
-      else { dlProg[id] = s.t > 0 ? s.b / s.t * 100 : 0; const b = $(`.model-card[data-id="${id}"] .btn-dl`); b && b.style.setProperty('--p', dlProg[id]); }
+      if (s.s === 8) {
+        clearInterval(t);
+        delete dlProg[id];
+        // Scan ulang beberapa kali — file kadang baru muncul di folder
+        const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); };
+        finish();
+        setTimeout(finish, 500);
+        setTimeout(() => { finish(); toast(m.short + ' siap dipakai'); }, 1200);
+      } else if (s.s === 16 || (s.s === 0 && tries > 3)) {
+        clearInterval(t); delete dlProg[id]; syncLocal(); renderModels();
+        toast('Unduhan gagal. Periksa koneksi atau token HF untuk model gated.');
+      } else {
+        tries++;
+        dlProg[id] = s.t > 0 ? s.b / s.t * 100 : Math.min(95, (dlProg[id] || 0) + 1);
+        const b = $(`.model-card[data-id="${id}"] .btn-dl`);
+        b && b.style.setProperty('--p', dlProg[id]);
+      }
     }, 800);
   }
   function useModel(id) {
@@ -1114,5 +1150,16 @@
 
   /* ================= INIT ================= */
   syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); updateTop(); } });
+  // Refresh daftar model tiap kali buka tab Models
+  const _go = typeof go === 'function' ? go : null;
+  document.querySelectorAll('.tab[data-go="models"]').forEach(t => {
+    t.addEventListener('click', () => setTimeout(() => { syncLocal(); renderModels(); }, 80));
+  });
+  // Periodik ringan saat di tab models
+  setInterval(() => {
+    if (document.hidden) return;
+    const modelsScreen = document.getElementById('screen-models') || document.querySelector('.screen[data-name="models"]');
+    if (modelsScreen && modelsScreen.classList.contains('active')) { syncLocal(); renderModels(); }
+  }, 4000);
 })();

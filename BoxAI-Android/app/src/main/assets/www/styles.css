@@ -17,11 +17,12 @@
   --r-sm: 10px;
   --ease: cubic-bezier(.22,.8,.24,1);
   /* Safe area — fallback 0, real value dari CSS env di perangkat ber-notch */
-  --sat: env(safe-area-inset-top, 0px);
+  /* Native Kotlin mengisi nilai nyata; fallback untuk browser preview */
+  --sat: env(safe-area-inset-top, 28px);
   --sar: env(safe-area-inset-right, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
+  --sab: env(safe-area-inset-bottom, 16px);
   --sal: env(safe-area-inset-left, 0px);
-  --kb: 0px; /* di-set JS saat keyboard */
+  --kb: 0px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html {
@@ -125,6 +126,7 @@ button { font-family: inherit; color: inherit; }
 @keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 .topbar {
+  /* ruang status bar sudah di #app padding-top */
   height: 58px; padding: 0 8px 0 6px;
   display: flex; align-items: center; gap: 6px;
   flex-shrink: 0;
@@ -174,10 +176,13 @@ button { font-family: inherit; color: inherit; }
 
 .composer {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px calc(10px + var(--kb));
+  padding: 8px 12px 10px;
   flex-shrink: 0;
   background: var(--ink);
-  /* Saat keyboard: --kb di-set native, tabbar disembunyikan */
+}
+/* Saat keyboard terbuka: composer naik, tabbar hilang */
+#app.kb-open .composer {
+  padding-bottom: calc(10px + var(--kb));
 }
 .composer input {
   flex: 1; height: 46px; border-radius: 23px; border: 1px solid var(--edge);
@@ -294,9 +299,7 @@ button { font-family: inherit; color: inherit; }
 .tabbar {
   --i: 0;
   display: flex; align-items: stretch; flex-shrink: 0; position: relative; z-index: 20;
-  height: 64px; margin: 4px 14px calc(8px + var(--sab)); padding: 6px;
-  /* Jangan tertutup gesture nav / 3-button bar */
-  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  height: 64px; margin: 4px 12px 0; padding: 6px 6px calc(6px + var(--sab)); box-sizing: content-box;
   border-radius: 24px;
   background: var(--bar-2);
   border: 1px solid var(--edge);
