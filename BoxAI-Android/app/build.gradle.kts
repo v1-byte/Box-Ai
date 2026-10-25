@@ -13,6 +13,9 @@ android {
             storePassword = "boxai123"
             keyAlias = "boxai"
             keyPassword = "boxai123"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
@@ -20,8 +23,8 @@ android {
         applicationId = "com.boxai.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 13
-        versionName = "2.2.9"
+        versionCode = 14
+        versionName = "2.2.10"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -33,6 +36,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("stable")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
