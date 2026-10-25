@@ -23,8 +23,8 @@ android {
         applicationId = "com.boxai.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 24
-        versionName = "2.2.20"
+        versionCode = 25
+        versionName = "2.2.21"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }

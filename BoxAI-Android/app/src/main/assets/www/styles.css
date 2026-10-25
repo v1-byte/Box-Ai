@@ -664,3 +664,15 @@ select.field { appearance: none; -webkit-appearance: none; }
 .btn-use{padding:8px 14px;border-radius:999px;border:1px solid rgba(61,220,151,.45);background:rgba(61,220,151,.12);color:var(--ok);font-weight:600;font-size:13px}
 .btn-dl{width:40px;height:40px;border-radius:50%;border:1px solid rgba(91,124,255,.45);background:rgba(91,124,255,.15);color:var(--volt-2);font-size:16px;display:grid;place-items:center}
 .model-card.ready{border-color:rgba(61,220,151,.35)}
+
+/* sticky download status panel — always visible while downloading */
+.dl-panel{margin:12px 0 8px;padding:12px 14px;border-radius:14px;border:1px solid rgba(91,124,255,.45);background:linear-gradient(135deg,rgba(91,124,255,.18),rgba(16,18,24,.95));box-shadow:0 8px 28px -12px rgba(91,124,255,.5)}
+.dl-panel-title{font-size:12px;font-weight:700;color:var(--volt-2);letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px}
+.dl-panel-row{display:flex;align-items:center;gap:12px;margin-top:8px}
+.dl-panel-meta{flex:1;min-width:0}
+.dl-panel-meta strong{display:block;font-size:14px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-pct{display:block;margin-top:6px;font-size:13px;font-weight:600;color:var(--bone)}
+.dl-bar{position:relative;height:10px;margin-top:4px;border-radius:99px;background:rgba(0,0,0,.35);overflow:hidden}
+.dl-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5b7cff,#8fa6ff);border-radius:99px;transition:width .3s ease}
+.dl-bar.paused i{background:linear-gradient(90deg,#f0c14a,#e8a838)}
+.dl-bar span{font-size:11px;color:var(--mute)}

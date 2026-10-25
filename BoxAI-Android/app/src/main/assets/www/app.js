@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.20';
+  const APP_VERSION = '2.2.21';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -533,6 +533,41 @@
   /* ================= MODELS ================= */
   let filter = 'all';
   const dlProg = {}; const dlIds = {}; const dlState = {}; // run|pause|done
+  function renderDlPanel() {
+    const panel = $('#dlPanel');
+    if (!panel) return;
+    const ids = Object.keys(dlState).filter(id => dlState[id] === 'run' || dlState[id] === 'pause');
+    if (!ids.length) { panel.hidden = true; panel.innerHTML = ''; return; }
+    panel.hidden = false;
+    panel.innerHTML = '<div class="dl-panel-title">Unduhan aktif</div>' + ids.map(id => {
+      const m = model(id);
+      const st = dlState[id];
+      const p = Math.max(0, Math.min(100, Math.round(dlProg[id] || 0)));
+      const name = (m && m.short) ? m.short : id;
+      const controls = st === 'pause'
+        ? `<button type="button" class="btn-dl-ctrl play" data-dl="${esc(id)}" data-act="resume">▶ Lanjut</button>
+           <button type="button" class="btn-dl-ctrl danger" data-dl="${esc(id)}" data-act="cancel">✕</button>`
+        : `<button type="button" class="btn-dl-ctrl" data-dl="${esc(id)}" data-act="pause">⏸ Jeda</button>
+           <button type="button" class="btn-dl-ctrl danger" data-dl="${esc(id)}" data-act="cancel">✕</button>`;
+      return `<div class="dl-panel-row" data-id="${esc(id)}">
+        <div class="dl-panel-meta"><strong>${esc(name)}</strong>
+          <div class="dl-bar ${st === 'pause' ? 'paused' : ''}"><i style="width:${p}%"></i></div>
+          <span class="dl-pct">${p}%${st === 'pause' ? ' · dijeda' : ' · mengunduh'}</span>
+        </div>
+        <div class="dl-actions">${controls}</div>
+      </div>`;
+    }).join('');
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('#dlPanel [data-act]');
+    if (!b) return;
+    const id = b.getAttribute('data-dl');
+    if (!id) return;
+    e.preventDefault(); e.stopPropagation();
+    if (b.dataset.act === 'pause') pauseDownload(id);
+    else if (b.dataset.act === 'resume') resumeDownload(id);
+    else if (b.dataset.act === 'cancel') cancelDownload(id);
+  }, true);
   const QRE = /(IQ\d_[A-Z0-9_]+|Q\d_[A-Z0-9_]+|BF16|F16|F32)/i;
   const modelId = f => 'm_' + f.replace(/[^a-z0-9]/gi, '_');
   const fmtN = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' jt' : n >= 1e3 ? Math.round(n / 1e3) + ' rb' : String(n || 0);
@@ -629,18 +664,35 @@
   let connCache = { gh: null, cf: null, r2: null };
   function remoteCard(m) {
     const local = MODELS.find(x => x.file === m.name || x.name === m.name.replace(/\.gguf$/i, ''));
-    const has = !!(local && S.dl[local.id]);
-    const id = has ? local.id : modelId(m.name);
+    const id = local ? local.id : modelId(m.name);
+    const has = !!(local && S.dl[id]);
     const size = m.size ? fmtGB(m.size / 1073741824) : '—';
     const src = m.source || 'remote';
+    const st = dlState[id];
+    const prog = dlProg[id];
+    let actions;
+    let bar = '';
+    if (has) {
+      actions = `<button type="button" class="btn-use" data-act="use">Gunakan</button>`;
+    } else if (st === 'run' || (prog != null && st !== 'pause')) {
+      const p = Math.max(0, Math.min(100, Math.round(prog || 0)));
+      bar = `<div class="dl-bar"><i style="width:${p}%"></i><span>${p}%</span></div>`;
+      actions = `<div class="dl-actions">
+        <button type="button" class="btn-dl-ctrl" data-act="pause">⏸</button>
+        <button type="button" class="btn-dl-ctrl danger" data-act="cancel">✕</button></div>`;
+    } else if (st === 'pause') {
+      const p = Math.max(0, Math.min(100, Math.round(prog || 0)));
+      bar = `<div class="dl-bar paused"><i style="width:${p}%"></i><span>${p}% · jeda</span></div>`;
+      actions = `<div class="dl-actions">
+        <button type="button" class="btn-dl-ctrl play" data-act="resume">▶</button>
+        <button type="button" class="btn-dl-ctrl danger" data-act="cancel">✕</button></div>`;
+    } else {
+      actions = `<button type="button" class="btn-dl" data-act="rdl" title="Unduh">▶ Unduh</button>`;
+    }
     return `<article class="model-card" data-id="${esc(id)}" data-remote="1" data-url="${esc(m.url)}" data-file="${esc(m.name)}" data-size="${m.size || 0}" data-src="${esc(src)}">
-      <div class="mc-top"><strong>${esc(m.name)}</strong><span class="badge">${esc(src)}</span></div>
-      <div class="kv"><span>Ukuran</span><span>${size}</span></div>
-      <div class="kv"><span>Status</span><span>${has ? 'Sudah di perangkat' : 'Belum diunduh'}</span></div>
-      <div class="mc-actions">${has
-        ? `<button type="button" class="btn primary" data-act="use">Pakai</button>`
-        : `<button type="button" class="btn primary btn-dl" data-act="rdl">Unduh</button>`}</div>
-    </article>`;
+      <div class="m-ico">${ic('cube')}</div>
+      <div class="model-info"><strong>${esc(m.name)}</strong><span>${esc(src)} · ${size}</span>${bar}</div>
+      ${actions}</article>`;
   }
   function renderRemoteList(list, emptyMsg) {
     const L = $('#hubList');
@@ -730,12 +782,15 @@
     if (!card) return;
     const act = e.target.closest('[data-act]');
     if (!act) return;
+    const id = card.dataset.id;
     if (act.dataset.act === 'rdl') {
       startRemoteDownload(card.dataset.file, card.dataset.url, +card.dataset.size || 0, card.dataset.src);
+      renderDlPanel();
     } else if (act.dataset.act === 'use') {
-      const id = card.dataset.id;
-      if (S.dl[id]) { S.active = id; save(); updateTop(); toast(model(id).short + ' aktif'); go('chat'); }
-    }
+      if (S.dl[id]) useModel(id);
+    } else if (act.dataset.act === 'pause') pauseDownload(id);
+    else if (act.dataset.act === 'resume') resumeDownload(id);
+    else if (act.dataset.act === 'cancel') cancelDownload(id);
   });
   $('#connUrl') && $('#connUrl').addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -814,7 +869,7 @@
       if (s.s === 4) { // paused native
         dlState[id] = 'pause';
         if (s.t > 0) dlProg[id] = s.b / s.t * 100;
-        renderModels();
+        renderDlPanel(); renderModels();
         return;
       }
       if (s.s === 8) {
@@ -823,25 +878,33 @@
         const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); };
         finish();
         setTimeout(finish, 400);
-        setTimeout(() => { finish(); toast(m.short + ' siap — ketuk Gunakan'); }, 900);
+        setTimeout(() => { finish(); renderDlPanel(); toast(m.short + ' siap — ketuk Gunakan'); }, 900);
       } else if (s.s === 16) {
         clearInterval(tick);
         delete dlProg[id]; delete dlIds[id]; delete dlState[id];
-        renderModels();
+        renderDlPanel(); renderModels();
         toast('Unduhan gagal / dibatalkan');
       } else {
         dlState[id] = 'run';
         dlProg[id] = s.t > 0 ? (s.b / s.t * 100) : Math.min(99, (dlProg[id] || 0) + 0.5);
-        // live update bar without full re-render if possible
-        const card = $(`.model-card[data-id="${id}"]`);
+        renderDlPanel();
+        const card = document.querySelector(`.model-card[data-id="${id}"]`);
         if (card) {
           const p = Math.round(dlProg[id]);
           const bar = card.querySelector('.dl-bar i');
           const sp = card.querySelector('.dl-bar span');
           if (bar) bar.style.width = p + '%';
           if (sp) sp.textContent = p + '%';
-          else renderModels();
-        } else renderModels();
+        }
+        // Update panel pct text live
+        const row = document.querySelector(`#dlPanel .dl-panel-row[data-id="${id}"]`);
+        if (row) {
+          const p = Math.round(dlProg[id] || 0);
+          const bi = row.querySelector('.dl-bar i');
+          const pct = row.querySelector('.dl-pct');
+          if (bi) bi.style.width = p + '%';
+          if (pct) pct.textContent = p + '% · mengunduh';
+        }
       }
     }, 500);
     // store interval id lightly
@@ -856,7 +919,7 @@
     const did = NATIVE.startDownload(m.url, m.file, tok);
     if (did < 0) return toast('Nama file tidak valid');
     dlProg[id] = 0; dlState[id] = 'run';
-    renderModels(); toast('Mengunduh ' + m.short);
+    renderDlPanel(); renderModels(); toast('Mengunduh ' + m.short);
     trackDownload(id, did);
   }
   function pauseDownload(id) {
@@ -865,7 +928,7 @@
     NATIVE.pauseDownload(did);
     dlState[id] = 'pause';
     clearInterval(dlIds['t_' + id]);
-    renderModels(); toast('Unduhan dijeda');
+    renderDlPanel(); renderModels(); toast('Unduhan dijeda');
   }
   function resumeDownload(id) {
     const did = dlIds[id];
@@ -874,7 +937,7 @@
     if (did != null && NATIVE.resumeDownload) {
       NATIVE.resumeDownload(did);
       dlState[id] = 'run';
-      renderModels(); toast('Melanjutkan unduhan');
+      renderDlPanel(); renderModels(); toast('Melanjutkan unduhan');
       trackDownload(id, did);
       return;
     }
@@ -886,7 +949,7 @@
     if (did != null) try { NATIVE.cancel(did); } catch (e) {}
     clearInterval(dlIds['t_' + id]);
     delete dlProg[id]; delete dlIds[id]; delete dlState[id]; delete dlIds['t_' + id];
-    renderModels(); toast('Unduhan dibatalkan');
+    renderDlPanel(); renderModels(); toast('Unduhan dibatalkan');
   }
   function useModel(id) {
     if (!S.dl[id]) return toast('Model belum terunduh');
