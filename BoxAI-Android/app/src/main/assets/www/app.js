@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.5';
+  const APP_VERSION = '2.2.6';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -665,40 +665,7 @@
         <button class="btn ghost" data-close>Tutup</button>`);
     },
     async version() {
-      toast('Memeriksa update…');
-      try {
-        const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const data = await r.json();
-        const tag = (data.tag_name || '').replace(/^v/i, '');
-        const asset = (data.assets || []).find(a => /\.apk$/i.test(a.name));
-        const url = asset ? asset.browser_download_url : (data.html_url || '');
-        const cmp = (a, b) => {
-          const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
-          for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-            const x = pa[i] || 0, y = pb[i] || 0;
-            if (x !== y) return x - y;
-          }
-          return 0;
-        };
-        if (tag && cmp(tag, APP_VERSION) > 0) {
-          const go = await confirmBox(
-            'Update tersedia: v' + tag,
-            'Versi kamu: ' + APP_VERSION + '. Versi baru memperbaiki UI dan deteksi model. Unduh APK lalu install (izinkan sumber tidak dikenal).',
-            'Unduh update',
-            false
-          );
-          if (go && url) {
-            if (NATIVE && NATIVE.openUrl) NATIVE.openUrl(url);
-            else window.open(url, '_blank');
-            toast('Membuka unduhan APK…');
-          }
-        } else {
-          toast('Box AI ' + APP_VERSION + ' sudah versi terbaru');
-        }
-      } catch (e) {
-        toast('Gagal cek update: ' + (e.message || 'offline'));
-      }
+      startInAppUpdate(true);
     }
   };
   $$('[data-set]').forEach(el => el.addEventListener('click', () => ACTIONS[el.dataset.set] && ACTIONS[el.dataset.set]()));
@@ -1189,42 +1156,131 @@
 
   /* ================= INIT ================= */
 
-  /* ---- Auto-update check (sekali / 24 jam) ---- */
+  /* ---- In-app update (unduh + install di dalam app) ---- */
+  const RELEASES_API = window.RELEASES_API || 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
+  function cmpVer(a, b) {
+    const pa = String(a).replace(/^v/i,'').split('.').map(Number);
+    const pb = String(b).replace(/^v/i,'').split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = pa[i] || 0, y = pb[i] || 0;
+      if (x !== y) return x - y;
+    }
+    return 0;
+  }
+  function showUpd(title, sub, pct, showInstall, showLater) {
+    const ov = document.getElementById('updOverlay');
+    if (!ov) return;
+    ov.hidden = false;
+    document.getElementById('updTitle').textContent = title;
+    document.getElementById('updSub').textContent = sub;
+    const fill = document.getElementById('updFill');
+    const pctEl = document.getElementById('updPct');
+    if (pct == null) {
+      fill.style.width = '30%';
+      fill.style.animation = 'updPulse 1.2s ease-in-out infinite';
+      pctEl.textContent = '…';
+    } else {
+      fill.style.animation = 'none';
+      fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      pctEl.textContent = Math.round(pct) + '%';
+    }
+    document.getElementById('updBtn').hidden = !showInstall;
+    document.getElementById('updLater').hidden = !showLater;
+  }
+  function hideUpd() {
+    const ov = document.getElementById('updOverlay');
+    if (ov) ov.hidden = true;
+  }
+  let _updApkName = 'BoxAI-update.apk';
+  let _updDlId = -1;
+  async function startInAppUpdate(manual) {
+    if (!NATIVE) {
+      if (manual) toast('Update in-app hanya di aplikasi Android');
+      return;
+    }
+    try {
+      showUpd('Memeriksa update', 'Menghubungi server…', null, false, false);
+      const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const tag = (data.tag_name || '').replace(/^v/i, '');
+      const cur = (NATIVE.appVersion && NATIVE.appVersion()) || APP_VERSION;
+      const asset = (data.assets || []).find(a => /\.apk$/i.test(a.name));
+      if (!tag || !asset) {
+        hideUpd();
+        if (manual) toast('Tidak ada paket update');
+        return;
+      }
+      if (cmpVer(tag, cur) <= 0) {
+        hideUpd();
+        if (manual) toast('Box AI ' + cur + ' sudah versi terbaru');
+        return;
+      }
+      _updApkName = asset.name || ('BoxAI-v' + tag + '.apk');
+      const sizeMb = asset.size ? (asset.size / 1048576).toFixed(1) : '?';
+      showUpd(
+        'Update v' + tag,
+        'Versi kamu: ' + cur + ' · ' + sizeMb + ' MB\nMengunduh di dalam aplikasi…',
+        0, false, true
+      );
+      const did = NATIVE.downloadUpdate(asset.browser_download_url, _updApkName);
+      if (did < 0) {
+        hideUpd();
+        toast('Gagal memulai unduhan');
+        return;
+      }
+      _updDlId = did;
+      const t = setInterval(() => {
+        let s = {};
+        try { s = JSON.parse(NATIVE.updateStatus(did)); } catch (e) {}
+        if (s.s === 8) {
+          clearInterval(t);
+          showUpd('Siap diinstall', 'Unduhan selesai. Ketuk Install untuk memasang v' + tag + '.', 100, true, true);
+        } else if (s.s === 16 || s.s === 0) {
+          clearInterval(t);
+          hideUpd();
+          toast('Unduhan update gagal');
+        } else {
+          const pct = s.t > 0 ? (s.b / s.t) * 100 : 5;
+          showUpd('Mengunduh v' + tag, 'Jangan tutup aplikasi…', pct, false, true);
+        }
+      }, 400);
+    } catch (e) {
+      hideUpd();
+      if (manual) toast('Gagal cek update: ' + (e.message || 'offline'));
+    }
+  }
+  document.getElementById('updBtn') && document.getElementById('updBtn').addEventListener('click', () => {
+    if (!NATIVE) return;
+    const res = JSON.parse(NATIVE.installUpdate(_updApkName) || '{}');
+    if (res.ok) {
+      toast('Membuka installer…');
+    } else if (res.error === 'need_permission') {
+      toast(res.msg || 'Izinkan instalasi dari sumber ini');
+    } else {
+      toast('Install gagal: ' + (res.error || 'unknown'));
+    }
+  });
+  document.getElementById('updLater') && document.getElementById('updLater').addEventListener('click', () => {
+    if (_updDlId >= 0 && NATIVE && NATIVE.cancelUpdate) NATIVE.cancelUpdate(_updDlId);
+    hideUpd();
+  });
   async function checkUpdateSilent() {
     try {
       const key = 'box_last_update_check';
       const last = +(localStorage.getItem(key) || 0);
-      if (Date.now() - last < 24 * 3600 * 1000) return;
+      if (Date.now() - last < 12 * 3600 * 1000) return;
       localStorage.setItem(key, String(Date.now()));
+      if (!NATIVE) return;
       const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
       if (!r.ok) return;
       const data = await r.json();
       const tag = (data.tag_name || '').replace(/^v/i, '');
-      const cmp = (a, b) => {
-        const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
-        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-          const x = pa[i] || 0, y = pb[i] || 0;
-          if (x !== y) return x - y;
-        }
-        return 0;
-      };
-      if (tag && cmp(tag, APP_VERSION) > 0) {
-        const asset = (data.assets || []).find(a => /\.apk$/i.test(a.name));
-        const url = asset ? asset.browser_download_url : data.html_url;
-        const go = await confirmBox(
-          'Update Box AI v' + tag,
-          'Versi baru tersedia (kamu: ' + APP_VERSION + '). Disarankan update untuk perbaikan UI & model.',
-          'Unduh',
-          false
-        );
-        if (go && url) {
-          if (NATIVE && NATIVE.openUrl) NATIVE.openUrl(url);
-          else window.open(url, '_blank');
-        }
-      }
-    } catch (e) { /* offline — diam */ }
+      const cur = (NATIVE.appVersion && NATIVE.appVersion()) || APP_VERSION;
+      if (tag && cmpVer(tag, cur) > 0) startInAppUpdate(false);
+    } catch (e) {}
   }
-  setTimeout(checkUpdateSilent, 2500);
+  setTimeout(checkUpdateSilent, 2800);
 
   syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); updateTop(); } });

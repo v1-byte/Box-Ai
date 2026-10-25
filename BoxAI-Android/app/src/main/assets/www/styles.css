@@ -603,3 +603,50 @@ select.field { appearance: none; -webkit-appearance: none; }
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
 }
+
+
+/* ===== In-app update ===== */
+.upd-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.upd-overlay[hidden] { display: none !important; }
+.upd-card {
+  width: min(340px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 28px 22px 20px;
+  text-align: center;
+  box-shadow: 0 24px 60px -12px rgba(0,0,0,.7);
+  animation: enter .35s var(--ease);
+}
+.upd-icon {
+  width: 64px; height: 64px; margin: 0 auto 14px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(91,124,255,.35), rgba(91,124,255,.12));
+  display: grid; place-items: center;
+  color: var(--volt-2);
+}
+.upd-icon .ic { width: 32px; height: 32px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.upd-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.upd-sub { font-size: 13px; color: var(--mute); margin-bottom: 18px; line-height: 1.4; }
+.upd-bar {
+  height: 8px; border-radius: 8px; background: var(--edge);
+  overflow: hidden; margin-bottom: 8px;
+}
+.upd-bar i {
+  display: block; height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--volt), var(--volt-2));
+  border-radius: 8px;
+  transition: width .25s ease;
+}
+.upd-pct { font-size: 13px; font-weight: 600; color: var(--volt-2); margin-bottom: 14px; }
+.upd-card .btn { width: 100%; margin-top: 6px; }
+.upd-card .btn.ghost { margin-top: 4px; }
+
+@keyframes updPulse { 0%,100%{opacity:.55;width:30%} 50%{opacity:1;width:55%} }

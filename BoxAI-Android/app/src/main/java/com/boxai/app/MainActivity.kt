@@ -27,6 +27,9 @@ import android.os.StatFs
 import android.webkit.JavascriptInterface
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.core.content.FileProvider
+import android.content.pm.PackageManager
+import android.provider.Settings
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -415,13 +418,97 @@ class Bridge(
     /** Path absolut folder models (debug / pencari). */
     @JavascriptInterface fun modelsPath(): String = dir().absolutePath
 
-    /** Buka URL di browser eksternal (update APK, tautan, dll). */
+    /** Buka URL di browser eksternal. */
     @JavascriptInterface fun openUrl(url: String) {
         try {
             val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ctx.startActivity(i)
         } catch (_: Exception) { }
+    }
+
+    private fun updatesDir(): File = File(ctx.getExternalFilesDir(null), "updates").also { it.mkdirs() }
+
+    /** Versi app yang terpasang (versionName). */
+    @JavascriptInterface fun appVersion(): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.PackageInfoFlags.of(0)).versionName ?: "0"
+            } else {
+                @Suppress("DEPRECATION")
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"
+            }
+        } catch (_: Exception) { "0" }
+    }
+
+    /** Unduh APK update ke folder app. Return download id atau -1. */
+    @JavascriptInterface fun downloadUpdate(url: String, fileName: String): Long {
+        val name = if (fileName.endsWith(".apk", true)) fileName else "BoxAI-update.apk"
+        val dest = File(updatesDir(), name)
+        try { dest.delete() } catch (_: Exception) { }
+        return try {
+            val r = DownloadManager.Request(Uri.parse(url))
+                .setTitle("Box AI Update")
+                .setDescription(name)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
+                .setDestinationInExternalFilesDir(ctx, "updates", name)
+            r.addRequestHeader("User-Agent", "BoxAI-Updater")
+            dm.enqueue(r)
+        } catch (e: Exception) { -1L }
+    }
+
+    /** Status unduhan update: {s,b,t,path} */
+    @JavascriptInterface fun updateStatus(id: Long): String {
+        val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L).put("path", "")
+        try {
+            dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
+                if (c.moveToFirst()) {
+                    o.put("s", c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)))
+                    o.put("b", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
+                    o.put("t", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
+                    val local = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))
+                    if (local != null) o.put("path", local)
+                }
+            }
+        } catch (_: Exception) { }
+        return o.toString()
+    }
+
+    /** Install APK yang sudah diunduh (FileProvider + REQUEST_INSTALL_PACKAGES). */
+    @JavascriptInterface fun installUpdate(fileName: String): String {
+        return try {
+            val name = if (fileName.endsWith(".apk", true)) fileName else "BoxAI-update.apk"
+            val file = File(updatesDir(), name)
+            if (!file.exists() || file.length() < 1000) {
+                return JSONObject().put("ok", false).put("error", "File APK tidak ditemukan").toString()
+            }
+            // Android 8+: pastikan boleh install dari sumber ini
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!ctx.packageManager.canRequestPackageInstalls()) {
+                    val settings = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                        .setData(Uri.parse("package:" + ctx.packageName))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(settings)
+                    return JSONObject().put("ok", false).put("error", "need_permission").put("msg", "Izinkan instalasi dari sumber ini, lalu coba lagi").toString()
+                }
+            }
+            val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            ctx.startActivity(intent)
+            JSONObject().put("ok", true).toString()
+        } catch (e: Exception) {
+            JSONObject().put("ok", false).put("error", e.message ?: "install failed").toString()
+        }
+    }
+
+    @JavascriptInterface fun cancelUpdate(id: Long) {
+        try { dm.remove(id) } catch (_: Exception) { }
     }
 
     @JavascriptInterface fun info(): String {

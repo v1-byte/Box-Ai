@@ -187,7 +187,7 @@
       <div class="list">
         <div class="li link" data-go="about"><span>Tentang Box AI</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
         <div class="li link" data-set="license"><span>Lisensi</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
-        <div class="li link" data-set="version"><span>Versi / Cek update</span><span class="val" id="v-appVer">2.2.5</span></div>
+        <div class="li link" data-set="version"><span>Versi / Cek update</span><span class="val" id="v-appVer">2.2.6</span></div>
       </div>
     </div>
   </section>
@@ -310,6 +310,21 @@
   <div class="overlay" id="overlay" hidden></div>
   <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- In-app update overlay -->
+  <div id="updOverlay" class="upd-overlay" hidden>
+    <div class="upd-card">
+      <div class="upd-icon">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/></svg>
+      </div>
+      <h2 id="updTitle">Update tersedia</h2>
+      <p class="upd-sub" id="updSub">Mengunduh versi baru…</p>
+      <div class="upd-bar"><i id="updFill"></i></div>
+      <div class="upd-pct" id="updPct">0%</div>
+      <button type="button" class="btn primary" id="updBtn" hidden>Install sekarang</button>
+      <button type="button" class="btn ghost" id="updLater" hidden>Nanti saja</button>
+    </div>
+  </div>
 
   <nav class="tabbar" id="tabbar">
     <span class="pill" id="tabPill"></span>
