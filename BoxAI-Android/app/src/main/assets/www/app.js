@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.12';
+  const APP_VERSION = '2.2.13';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -377,39 +377,50 @@
     } else { if (size) m.gb = size / 1073741824; if (url && !m.url) m.url = url; }
     return m;
   }
-  function syncLocal() {
-    if (!NATIVE) return;
-    let a = [];
-    try { a = JSON.parse(NATIVE.listModels() || '[]'); } catch (e) { a = []; }
+  function applyModelList(a, srcDefault) {
     if (!Array.isArray(a)) a = [];
     const have = new Set();
     a.forEach(f => {
       if (!f || !f.name) return;
+      if ((f.size || 0) > 0 && f.size < 50 * 1048576) return; // skip < 50MB
       const id = modelId(f.name);
       have.add(id);
-      reg(f.name, f.size || 0, 'local');
+      const src = f.source || srcDefault || 'local';
+      reg(f.name, f.size || 0, src);
       S.dl[id] = true;
-      // Path absolut jika ada (model di luar folder app)
-      const fileRef = f.path || f.name;
-      if (MMETA_DEF[id]) { MMETA_DEF[id].file = fileRef; MMETA_DEF[id].path = f.path || ''; }
-      else MMETA_DEF[id] = { file: fileRef, path: f.path || '', arch: 'GGUF', quant: 'GGUF', ctx: 4096, tpl: 'chatml' };
+      // Prefer absolute path so generate can load external / Pocket AI files
+      const fileRef = (f.path && String(f.path).charAt(0) === '/') ? f.path : (f.path || f.name);
+      if (MMETA_DEF[id]) { MMETA_DEF[id].file = fileRef; MMETA_DEF[id].path = f.path || fileRef; MMETA_DEF[id].source = src; }
+      else MMETA_DEF[id] = { file: fileRef, path: f.path || fileRef, source: src, arch: 'GGUF', quant: 'GGUF', ctx: 2048, tpl: 'chatml' };
     });
     for (let i = MODELS.length - 1; i >= 0; i--) {
       const m = MODELS[i];
-      // Jangan hapus entri yang sedang diunduh
       if (!have.has(m.id) && dlProg[m.id] == null) {
         delete S.dl[m.id];
-        if (m.src !== 'hub' && m.src !== 'local') { /* keep hub catalog */ }
-        else if (m.src === 'local') MODELS.splice(i, 1);
+        if (m.src === 'local' || m.src === 'pocketai' || m.src === 'download' || m.src === 'external' || m.src === 'other_app') MODELS.splice(i, 1);
       }
     }
     if (S.active && !have.has(S.active)) S.active = '';
-    // Auto-aktifkan model pertama jika belum ada yang aktif
-    if (!S.active && have.size) {
-      S.active = [...have][0];
-    }
+    if (!S.active && have.size) S.active = [...have][0];
     save();
     updateTop();
+    return have.size;
+  }
+  function syncLocal() {
+    if (!NATIVE) return 0;
+    let a = [];
+    try { a = JSON.parse(NATIVE.listModels() || '[]'); } catch (e) { a = []; }
+    return applyModelList(a, 'local');
+  }
+  /** Scan semua lokasi (Pocket AI, Download, model ai, APK lain) — untuk tombol Terunduh / Pindai */
+  function syncLocalDeep() {
+    if (!NATIVE) return 0;
+    let a = [];
+    try {
+      if (NATIVE.listModelsDeep) a = JSON.parse(NATIVE.listModelsDeep() || '[]');
+      else a = JSON.parse(NATIVE.listModels() || '[]');
+    } catch (e) { a = []; }
+    return applyModelList(a, 'external');
   }
   const nativeInfo = () => { try { return JSON.parse(NATIVE.info()); } catch (e) { return {}; } };
   const cacheMB = () => (nativeInfo().cache || 0) / 1048576;
@@ -471,7 +482,13 @@
   }
   $$('.chip').forEach(c => c.addEventListener('click', () => {
     $$('.chip').forEach(x => x.classList.remove('active')); c.classList.add('active');
-    filter = c.dataset.f; renderModels();
+    filter = c.dataset.f;
+    if (filter === 'dl' && NATIVE && NATIVE.listModelsDeep) {
+      toast('Memuat model terunduh dari seluruh perangkat…');
+      setTimeout(() => {
+        try { syncLocalDeep(); renderModels(); updateTop(); } catch (e) {}
+      }, 50);
+    } else renderModels();
   }));
   function startDownload(id) {
     const m = model(id);
@@ -511,7 +528,7 @@
       <div class="kv"><span>Parameter</span><span>${m.meta}</span></div>
       <div class="kv"><span>Ukuran file</span><span>${fmtGB(m.gb)}</span></div>
       <div class="kv"><span>Sumber</span><span>${m.src === 'hub' ? 'HF Hub' : 'Perangkat'}</span></div>
-      <div class="kv"><span>Status</span><span>${act ? 'Aktif' : has ? 'Terunduh' : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh'}</span></div>
+      <div class="kv"><span>Status</span><span>${act ? 'Aktif' : has ? ('Terunduh' + (m.src && m.src !== 'local' && m.src !== 'hub' ? ' · ' + m.src : '')) : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh'}</span></div>
       ${!has ? '<button class="btn primary" data-v="dl">Unduh ' + fmtGB(m.gb) + '</button>' : ''}
       ${has && !act ? '<button class="btn primary" data-v="use">Pakai model ini</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus dari perangkat</button>' : ''}
       ${act ? '<button class="btn ghost" data-v="del">Hapus dari perangkat</button>' : ''}
@@ -685,13 +702,13 @@
         NATIVE.requestStoragePermission();
         return;
       }
-      toast('Memindai model…');
-      syncLocal();
+      toast('Memindai semua model di perangkat…');
+      await sleep(80);
+      const n = syncLocalDeep();
       renderModels();
       renderSettings();
       updateTop();
-      const n = MODELS.filter(m => S.dl[m.id]).length;
-      toast(n ? (n + ' model ditemukan') : 'Tidak ada file .gguf. Cek folder Download atau izinkan akses file.');
+      toast(n ? (n + ' model ditemukan (Pocket AI / Download / folder lain)') : 'Tidak ada .gguf ≥50MB. Izinkan akses semua file, atau letakkan di /model ai/');
     }
   };
   $$('[data-set]').forEach(el => el.addEventListener('click', () => ACTIONS[el.dataset.set] && ACTIONS[el.dataset.set]()));

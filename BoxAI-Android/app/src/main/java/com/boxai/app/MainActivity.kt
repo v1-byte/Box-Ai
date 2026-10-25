@@ -205,13 +205,27 @@ class Bridge(
             try {
                 val o = JSONObject(json)
                 val modelName = o.optString("model", "")
-                if (modelName.isBlank() || !safe(modelName)) {
+                if (modelName.isBlank()) {
                     post("window.BoxEngine&&BoxEngine.error('Model tidak valid')")
                     return@launch
                 }
-                val modelFile = File(dir(), modelName)
-                if (!modelFile.exists()) {
-                    post("window.BoxEngine&&BoxEngine.error('File model tidak ditemukan: $modelName')")
+                // Absolute path (external / Pocket AI) OR filename inside app models dir
+                val modelFile = if (modelName.startsWith("/")) {
+                    val f = File(modelName)
+                    if (!f.isFile || !f.name.endsWith(".gguf", true) || !safe(f.name)) {
+                        post("window.BoxEngine&&BoxEngine.error('Path model tidak valid')")
+                        return@launch
+                    }
+                    f
+                } else {
+                    if (!safe(modelName)) {
+                        post("window.BoxEngine&&BoxEngine.error('Model tidak valid')")
+                        return@launch
+                    }
+                    File(dir(), modelName)
+                }
+                if (!modelFile.exists() || modelFile.length() < 1024) {
+                    post("window.BoxEngine&&BoxEngine.error('File model tidak ditemukan: ${modelFile.name}')")
                     return@launch
                 }
 
@@ -334,20 +348,31 @@ class Bridge(
         roots.add(dir())
         ctx.getExternalFilesDir(null)?.let { roots.add(it); roots.add(File(it, "models")) }
         val base = Environment.getExternalStorageDirectory()
+        // Folder umum + folder pusat "model ai"
         val names = listOf(
             "Download", "Downloads", "Documents", "Models", "models", "GGUF", "gguf",
-            "BoxAI", "Box-AI", "llama", "Llama", "LMStudio", "Ollama", "PocketPal",
-            "Android/media"
+            "BoxAI", "Box-AI", "llama", "Llama", "LMStudio", "Ollama", "PocketPal", "PocketAI",
+            "model ai", "Models-AI", "BoxAI-Models", "Android/media"
         )
         names.forEach { n -> roots.add(File(base, n)) }
+        // Subfolder pusat
+        listOf("model ai", "Models", "Download/BoxAI-Models", "Download/Models-AI").forEach { n ->
+            roots.add(File(base, n))
+            listOf("qwen", "gemma", "llama", "phi", "mistral").forEach { sub ->
+                roots.add(File(File(base, n), sub))
+            }
+        }
+        // App AI lain (Android/data) — butuh MANAGE_EXTERNAL_STORAGE
         val pkgs = listOf(
-            "com.pocketpal", "com.pocketpalai", "ai.pocketpal",
-            "com.llamalab", "com.nexa", "com.mlc", "com.lmstudio"
+            "com.pocketai", "com.pocketai.app", "com.pocketpal", "com.pocketpalai", "ai.pocketpal",
+            "com.lokalai", "ai.mlc.mlc-llm", "com.llamalab", "com.nexa", "com.mlc", "com.lmstudio",
+            "com.boxai.app"
         )
         val androidData = File(base, "Android/data")
         pkgs.forEach { pkg ->
             roots.add(File(androidData, "$pkg/files"))
             roots.add(File(androidData, "$pkg/files/models"))
+            roots.add(File(androidData, "$pkg/files/Documents"))
         }
         return roots.filter { it.exists() && it.isDirectory }
     }
@@ -413,23 +438,48 @@ class Bridge(
         return a.toString()
     }
 
-    /** Slow wide scan (Download / shared folders). Call after splash, not on cold start. */
+    /** Wide multi-folder scan for tombol Terunduh / Pindai. NOT used on cold start. */
     @JavascriptInterface fun listModelsDeep(): String {
         val busy = busyNames()
-        val seen = HashSet<String>()
+        val seenPath = HashSet<String>()
         val files = mutableListOf<File>()
         for (root in modelScanRoots()) {
             val depth = when {
-                root.absolutePath.contains("Android/data") -> 2
-                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 1
+                root.absolutePath.contains("Android/data") -> 3
+                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 2
+                root.name.contains("model", true) || root.name.equals("Models", true) -> 3
                 else -> 2
             }
-            scanGguf(root, depth, files, seen)
+            scanGguf(root, depth, files, seenPath)
+        }
+        // Dedup by lowercase filename — keep largest (most complete)
+        val best = LinkedHashMap<String, File>()
+        for (f in files) {
+            if (f.name in busy) continue
+            if (f.length() < 50L * 1024L * 1024L) continue // skip < 50MB
+            val key = f.name.lowercase()
+            val prev = best[key]
+            if (prev == null || f.length() > prev.length()) best[key] = f
         }
         val a = JSONArray()
-        files.sortedByDescending { it.lastModified() }.forEach { f ->
-            if (f.name in busy) return@forEach
-            a.put(JSONObject().put("name", f.name).put("size", f.length()).put("mod", f.lastModified()).put("path", f.absolutePath))
+        best.values.sortedBy { it.name.lowercase() }.forEach { f ->
+            val path = f.absolutePath
+            val source = when {
+                path.contains("pocketai", true) || path.contains("pocketpal", true) -> "pocketai"
+                path.contains("Android/data", true) -> "other_app"
+                path.contains("Download", true) -> "download"
+                path.contains("model ai", true) || path.contains("Models", true) -> "external"
+                path.contains(dir().absolutePath) -> "boxai"
+                else -> "local"
+            }
+            a.put(
+                JSONObject()
+                    .put("name", f.name)
+                    .put("size", f.length())
+                    .put("mod", f.lastModified())
+                    .put("path", path)
+                    .put("source", source)
+            )
         }
         return a.toString()
     }
