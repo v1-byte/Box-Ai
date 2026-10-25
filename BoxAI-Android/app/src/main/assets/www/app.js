@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.21';
+  const APP_VERSION = '2.2.22';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -864,7 +864,7 @@
     dlState[id] = 'run';
     const m = model(id);
     const tick = setInterval(() => {
-      if (dlState[id] === 'pause') return; // keep interval, status frozen until resume
+      if (dlState[id] === 'pause') { renderDlPanel(); return; }
       let s = {}; try { s = JSON.parse(NATIVE.status(did)); } catch (e) { }
       if (s.s === 4) { // paused native
         dlState[id] = 'pause';
@@ -883,7 +883,9 @@
         clearInterval(tick);
         delete dlProg[id]; delete dlIds[id]; delete dlState[id];
         renderDlPanel(); renderModels();
-        toast('Unduhan gagal / dibatalkan');
+        let err = (s.err || '');
+        try { if (!err && NATIVE.lastDownloadError) err = NATIVE.lastDownloadError(); } catch (e) {}
+        toast(err ? ('Unduhan gagal: ' + err) : 'Unduhan gagal / dibatalkan');
       } else {
         dlState[id] = 'run';
         dlProg[id] = s.t > 0 ? (s.b / s.t * 100) : Math.min(99, (dlProg[id] || 0) + 0.5);
@@ -912,14 +914,33 @@
   }
   function startDownload(id) {
     const m = model(id);
-    if (!NATIVE) return toast('Unduhan hanya tersedia di aplikasi Android');
-    if (S.dl[id] || !m.url) return;
-    if (dlState[id] === 'run') return;
-    const tok = (m.url && m.url.includes('github') && S.ghToken) ? S.ghToken : (S.hfToken || '');
-    const did = NATIVE.startDownload(m.url, m.file, tok);
-    if (did < 0) return toast('Nama file tidak valid');
-    dlProg[id] = 0; dlState[id] = 'run';
-    renderDlPanel(); renderModels(); toast('Mengunduh ' + m.short);
+    if (!NATIVE) return toast('Unduhan hanya di aplikasi Android (bukan browser)');
+    if (S.dl[id]) return toast('Model sudah ada di perangkat');
+    if (!m.url) return toast('URL unduhan tidak ada untuk model ini');
+    if (dlState[id] === 'run') return toast('Sedang mengunduh…');
+    const fileName = String(m.file || (m.name + '.gguf')).split('/').pop();
+    const tok = (m.url && m.url.indexOf('github') >= 0 && S.ghToken) ? S.ghToken : (S.hfToken || '');
+    // Tampilkan panel dulu (sebelum native) agar user langsung lihat proses
+    dlProg[id] = 0;
+    dlState[id] = 'run';
+    renderDlPanel();
+    renderModels();
+    toast('Memulai unduhan ' + (m.short || fileName) + '…');
+    let did = -1;
+    try {
+      did = NATIVE.startDownload(m.url, fileName, tok);
+    } catch (e) {
+      delete dlProg[id]; delete dlState[id];
+      renderDlPanel();
+      return toast('Gagal mulai unduhan: ' + (e.message || e));
+    }
+    if (did < 0) {
+      let err = '';
+      try { err = NATIVE.lastDownloadError ? NATIVE.lastDownloadError() : ''; } catch (e) {}
+      delete dlProg[id]; delete dlState[id];
+      renderDlPanel();
+      return toast(err || 'Nama file / URL tidak valid');
+    }
     trackDownload(id, did);
   }
   function pauseDownload(id) {

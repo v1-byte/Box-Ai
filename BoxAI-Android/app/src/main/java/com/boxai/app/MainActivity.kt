@@ -853,6 +853,7 @@ class Bridge(
                 conn.connect()
                 val code = conn.responseCode
                 if (code !in 200..299 && code != 206) {
+                    lastDlError = "HTTP $code untuk ${job.name}"
                     job.status = DownloadManager.STATUS_FAILED
                     return@Thread
                 }
@@ -903,16 +904,26 @@ class Bridge(
                 job.bytes = dest.length()
                 if (job.total <= 0) job.total = job.bytes
                 job.status = DownloadManager.STATUS_SUCCESSFUL
-            } catch (_: Exception) {
-                job.status = if (job.paused) DownloadManager.STATUS_PAUSED else DownloadManager.STATUS_FAILED
-            }
-        }.start()
-    }
+            } catch (e: Exception) {
+                if (job.paused) job.status = DownloadManager.STATUS_PAUSED
+             @Volatile private var lastDlError: String = ""
+
+    @JavascriptInterface fun lastDownloadError(): String = lastDlError
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
-        if (!safe(name) || url.isBlank()) return -1L
+        lastDlError = ""
+        val pure = name.substringAfterLast('/').substringAfterLast('\\')
+        if (!safe(pure)) {
+            lastDlError = "nama file tidak valid: $name"
+            return -1L
+        }
+        if (url.isBlank() || !(url.startsWith("http://") || url.startsWith("https://"))) {
+            lastDlError = "URL unduhan kosong/tidak valid"
+            return -1L
+        }
         dir()
-        dlJobs.values.firstOrNull { it.name == name && it.status == DownloadManager.STATUS_PAUSED }?.let { job ->
+        // Resume paused job same file
+        dlJobs.values.firstOrNull { it.name == pure && it.status == DownloadManager.STATUS_PAUSED }?.let { job ->
             job.paused = false
             job.cancelled = false
             job.status = DownloadManager.STATUS_RUNNING
@@ -920,11 +931,26 @@ class Bridge(
             return job.id
         }
         val id = dlSeq.incrementAndGet()
-        val job = DlJob(id, url, name, token)
-        val part = File(dir(), name + ".part")
+        val job = DlJob(id, url, pure, token)
+        val part = File(dir(), pure + ".part")
         if (part.exists()) job.bytes = part.length()
         dlJobs[id] = job
         runDlJob(job)
+
+        // Also notify system so user sees Android download indicator
+        try {
+            val r = DownloadManager.Request(Uri.parse(url))
+                .setTitle(pure)
+                .setDescription("Box AI · unduhan model")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
+            if (token.isNotBlank()) r.addRequestHeader("Authorization", "Bearer $token")
+            r.addRequestHeader("User-Agent", "BoxAI/2.2 Android")
+            // Don't set destination — our custom job writes the file; this is status-only mirror optional
+            // Skip DM enqueue to avoid double download — notification via in-app panel only
+        } catch (_: Exception) { }
+
         return id
     }
 
@@ -950,6 +976,7 @@ class Bridge(
         val job = dlJobs[id]
         if (job != null) {
             o.put("s", job.status).put("b", job.bytes).put("t", job.total).put("name", job.name)
+            if (job.status == DownloadManager.STATUS_FAILED && lastDlError.isNotBlank()) o.put("err", lastDlError)
             return o.toString()
         }
         try {
@@ -971,6 +998,13 @@ class Bridge(
             job.paused = false
             job.status = DownloadManager.STATUS_FAILED
             try { File(dir(), job.name + ".part").delete() } catch (_: Exception) { }
+            dlJobs.remove(id)
+            return
+        }
+        try { dm.remove(id) } catch (_: Exception) { }
+    }
+
+  try { File(dir(), job.name + ".part").delete() } catch (_: Exception) { }
             dlJobs.remove(id)
             return
         }
