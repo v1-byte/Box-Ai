@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.25';
+  const APP_VERSION = '2.2.26';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -27,7 +27,16 @@
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
-  const save = () => { try { localStorage.setItem('boxai.v3', JSON.stringify(S)); } catch (e) {} };
+  const save = () => {
+    try {
+      const copy = JSON.parse(JSON.stringify(S));
+      if (copy.chat) copy.chat.forEach(m => {
+        if (m.img && String(m.img).length > 200000) m.img = undefined; // hemat storage
+        if (m.fileText && String(m.fileText).length > 50000) m.fileText = String(m.fileText).slice(0, 50000);
+      });
+      localStorage.setItem('boxai.v3', JSON.stringify(copy));
+    } catch (e) {}
+  };
   const NONE = { id: '', name: 'Belum ada model', short: 'Belum ada model', meta: '', gb: 0, src: '', file: '' };
   const model = id => MODELS.find(m => m.id === id) || NONE;
   const fmtMB = mb => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB').replace('.', ',');
@@ -195,7 +204,12 @@
     } else {
       S.chat.forEach(m => {
         if (m.r === 'ai') h += aiRow(m.h);
-        else h += `<div class="row user"><div class="bubble">${m.f ? `<div class="file-bubble">${ic('file')}${esc(m.f)}</div>` : ''}${esc(m.t)}</div></div>`;
+        else {
+          let extra = '';
+          if (m.img) extra += `<div class="file-bubble img"><img src="${m.img}" alt="${esc(m.f || '')}" /></div>`;
+          else if (m.f) extra += `<div class="file-bubble">${ic('file')}${esc(m.f)}</div>`;
+          h += `<div class="row user"><div class="bubble">${extra}${esc(m.t)}</div></div>`;
+        }
       });
     }
     if (S.typing && S.chat.length) h += `<div class="row ai" id="typingRow"><img src="assets/logo-64.webp" class="av" alt="" width="30" height="30" /><div class="bubble typing" aria-label="Sedang mengetik"><i></i><i></i><i></i></div></div>`;
@@ -264,7 +278,14 @@
     return (pal ? pal.prompt : (S.sysPrompt || meta(S.active).sys)) + (tools.length ? '\nTools: ' + tools.map(k => k + ' (' + TALENTS[k].desc + ')').join(', ') + '. Panggil dengan <tool>{"name":"...","args":{...}}</tool>.' : '');
   }
   async function agentTurn(depth) {
-    const msgs = [{ role: 'system', content: sysPrompt() }].concat(S.chat.map(m => m.r === 'ai' ? { role: 'assistant', content: m.raw || m.h.replace(/<[^>]+>/g, '') } : { role: 'user', content: m.t }));
+    const msgs = [{ role: 'system', content: sysPrompt() }].concat(S.chat.map(m => {
+      if (m.r === 'ai') return { role: 'assistant', content: m.raw || String(m.h || '').replace(/<[^>]+>/g, '') };
+      let c = m.t || '';
+      if (m.fileText) c += (c ? '\n\n' : '') + '--- Lampiran: ' + (m.f || 'file') + ' ---\n' + m.fileText;
+      else if (m.img) c += (c ? '\n' : '') + '[Pengguna melampirkan gambar: ' + (m.f || 'image') + '. Model teks ini tidak melihat piksel; jawab berdasarkan deskripsi/teks pengguna.]';
+      else if (m.f) c += (c ? '\n' : '') + '[Lampiran: ' + m.f + ']';
+      return { role: 'user', content: c };
+    }));
     let srcs = [];
     if (S.web && depth === 0) {
       const lastU = S.chat.slice().reverse().find(m => m.r === 'user');
@@ -307,12 +328,20 @@
   function send() {
     const text = (input.value || '').trim();
     if (!text && !attachment) return;
+    if (attachment && !attachment.kind) return toast('File masih dibaca, tunggu sebentar…');
     S.typing = false;
-    S.chat.push({ r: 'user', t: text || '(lampiran)', f: attachment ? attachment.name : undefined });
+    const att = attachment;
+    const msg = { r: 'user', t: text || (att ? ('Lampiran: ' + att.name) : '(lampiran)') };
+    if (att) {
+      msg.f = att.name;
+      if (att.kind === 'image' && att.dataUrl) msg.img = att.dataUrl;
+      if (att.text) msg.fileText = att.text;
+    }
+    S.chat.push(msg);
     input.value = ''; sendBtn.classList.remove('ready'); clearAttachment();
     save(); renderChat();
     const us = $$('.row.user', messages), last = us[us.length - 1]; last && last.classList.add('pop');
-    reply(text);
+    reply(text || msg.t);
   }
   sendBtn.addEventListener('click', send);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
@@ -338,18 +367,82 @@
     S.web = !S.web; save(); applyWeb(); toast(S.web ? 'Pencarian web aktif' : 'Pencarian web mati');
   });
 
-  /* lampiran */
+  /* lampiran — baca isi file/gambar agar bisa dipakai di chat */
   const fileInput = $('#fileInput'), chip = $('#attachChip');
-  function clearAttachment() { attachment = null; chip.hidden = true; chip.innerHTML = ''; fileInput.value = ''; }
-  function setAttachment(f) {
-    attachment = f;
-    chip.hidden = false;
-    chip.innerHTML = `${ic('file')}<span>${esc(f.name)} <small>${fmtMB(Math.max(f.size / 1048576, 0.1))}</small></span><button type="button" aria-label="Hapus lampiran">${ic('x')}</button>`;
-    $('button', chip).addEventListener('click', () => { clearAttachment(); sendBtn.classList.toggle('ready', input.value.trim().length > 0); });
-    sendBtn.classList.add('ready');
-    S.cache.thumbs += Math.max(f.size / 1048576, 0.5); save();
+  // attachment shape: { name, size, kind, text?, dataUrl?, mime }
+  function clearAttachment() {
+    attachment = null;
+    chip.hidden = true;
+    chip.innerHTML = '';
+    fileInput.value = '';
   }
-  fileInput.addEventListener('change', () => { if (fileInput.files[0]) setAttachment(fileInput.files[0]); });
+  function isTextish(file) {
+    const n = (file.name || '').toLowerCase();
+    const t = (file.type || '').toLowerCase();
+    if (t.startsWith('text/') || t === 'application/json' || t === 'application/javascript') return true;
+    return /\.(txt|md|markdown|json|csv|tsv|log|js|ts|tsx|jsx|py|kt|java|c|cpp|h|hpp|xml|html|htm|css|scss|yml|yaml|toml|ini|cfg|sh|bash|sql|r|go|rs|swift|php|rb)$/i.test(n);
+  }
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error || new Error('gagal baca file'));
+      r.readAsDataURL(file);
+    });
+  }
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => reject(r.error || new Error('gagal baca file'));
+      r.readAsText(file);
+    });
+  }
+  async function setAttachment(file) {
+    if (!file) return;
+    chip.hidden = false;
+    chip.innerHTML = `${ic('file')}<span>Membaca ${esc(file.name)}…</span>`;
+    try {
+      const mime = file.type || '';
+      const att = { name: file.name, size: file.size, mime: mime, kind: 'binary' };
+      if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name)) {
+        att.kind = 'image';
+        // resize-ish: still full data url for preview (cap ~4MB raw)
+        if (file.size > 6 * 1048576) throw new Error('Gambar terlalu besar (maks ~6 MB)');
+        att.dataUrl = await readFileAsDataURL(file);
+      } else if (isTextish(file) || file.size < 2 * 1048576) {
+        const raw = await readFileAsText(file);
+        att.kind = 'text';
+        att.text = raw.slice(0, 120000);
+        if (raw.length > 120000) att.text += '\n\n…[dipotong]';
+      } else if (mime === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+        att.kind = 'pdf';
+        att.text = '[File PDF: ' + file.name + ' — konten biner, model tidak bisa membaca PDF langsung. Ringkas/tempel teksnya jika perlu.]';
+      } else {
+        att.text = '[File terlampir: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB, tipe ' + (mime || 'unknown') + ')]';
+      }
+      attachment = att;
+      const preview = att.kind === 'image'
+        ? `<img class="attach-thumb" src="${att.dataUrl}" alt="" />`
+        : ic('file');
+      chip.innerHTML = `${preview}<span>${esc(att.name)} <small>${fmtMB(Math.max(att.size / 1048576, 0.1))}</small></span><button type="button" aria-label="Hapus lampiran">${ic('x')}</button>`;
+      const xb = chip.querySelector('button');
+      xb && xb.addEventListener('click', () => {
+        clearAttachment();
+        sendBtn.classList.toggle('ready', input.value.trim().length > 0);
+      });
+      sendBtn.classList.add('ready');
+      S.cache.thumbs = (S.cache.thumbs || 0) + Math.max(att.size / 1048576, 0.5);
+      save();
+    } catch (e) {
+      clearAttachment();
+      toast('Gagal membaca file: ' + (e.message || e));
+    }
+  }
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (f) setAttachment(f);
+  });
     async function openConnectorSheet() {
     const v = await openSheet(
       `<h2>Connector</h2>

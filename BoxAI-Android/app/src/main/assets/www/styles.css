@@ -676,3 +676,8 @@ select.field { appearance: none; -webkit-appearance: none; }
 .dl-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5b7cff,#8fa6ff);border-radius:99px;transition:width .3s ease}
 .dl-bar.paused i{background:linear-gradient(90deg,#f0c14a,#e8a838)}
 .dl-bar span{font-size:11px;color:var(--mute)}
+
+.attach-thumb{width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0}
+.file-bubble.img{padding:0;overflow:hidden;background:transparent;border:none}
+.file-bubble.img img{max-width:min(240px,70vw);max-height:200px;border-radius:12px;display:block}
+.attach-chip{display:flex;align-items:center;gap:10px}
