@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.22';
+  const APP_VERSION = '2.2.23';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -534,8 +534,14 @@
   let filter = 'all';
   const dlProg = {}; const dlIds = {}; const dlState = {}; // run|pause|done
   function renderDlPanel() {
-    const panel = $('#dlPanel');
-    if (!panel) return;
+    let panel = $('#dlPanel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'dlPanel';
+      panel.className = 'dl-panel';
+      const host = document.querySelector('#screen-models .scroll') || document.body;
+      host.insertBefore(panel, host.firstChild);
+    }
     const ids = Object.keys(dlState).filter(id => dlState[id] === 'run' || dlState[id] === 'pause');
     if (!ids.length) { panel.hidden = true; panel.innerHTML = ''; return; }
     panel.hidden = false;
@@ -657,7 +663,7 @@
     if (S.dl[m.id]) return toast('Model ini sudah ada di perangkat');
     startDownload(m.id);
   }
-  $('#hubList').addEventListener('click', e => { const c = e.target.closest('.model-card'); if (c) hfRepo(c.dataset.repo); });
+  $('#hubList').addEventListener('click', e => { const c = e.target.closest('.model-card[data-repo]'); if (c && c.dataset.repo) hfRepo(c.dataset.repo); });
   $('#hfq').addEventListener('input', e => { clearTimeout(hubT); hubT = setTimeout(() => hfSearch(e.target.value.trim()), 450); });
 
   /* ================= CONNECTORS (GitHub / Cloudflared / R2) ================= */

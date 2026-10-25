@@ -821,7 +821,7 @@ class Bridge(
         return null
     }
 
-    // ---- Custom download (progress + pause/resume) ----
+    // ---- Download with progress + pause/resume (fixed) ----
     private data class DlJob(
         val id: Long,
         val url: String,
@@ -832,9 +832,13 @@ class Bridge(
         @Volatile var status: Int = DownloadManager.STATUS_RUNNING,
         @Volatile var bytes: Long = 0,
         @Volatile var total: Long = 0,
+        @Volatile var error: String = "",
     )
     private val dlJobs = ConcurrentHashMap<Long, DlJob>()
     private val dlSeq = AtomicLong(900_000L)
+    @Volatile private var lastDlError: String = ""
+
+    @JavascriptInterface fun lastDownloadError(): String = lastDlError
 
     private fun runDlJob(job: DlJob) {
         Thread {
@@ -845,15 +849,18 @@ class Bridge(
                 if (existing > 0) job.bytes = existing
                 val conn = java.net.URL(job.url).openConnection() as java.net.HttpURLConnection
                 conn.instanceFollowRedirects = true
-                conn.connectTimeout = 30_000
-                conn.readTimeout = 60_000
-                conn.setRequestProperty("User-Agent", "BoxAI/2.2 Android")
-                if (job.token.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${job.token}")
+                conn.connectTimeout = 45_000
+                conn.readTimeout = 120_000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) BoxAI/2.2")
+                if (job.token.isNotBlank()) {
+                    conn.setRequestProperty("Authorization", "Bearer ${job.token}")
+                }
                 if (existing > 0) conn.setRequestProperty("Range", "bytes=$existing-")
                 conn.connect()
                 val code = conn.responseCode
                 if (code !in 200..299 && code != 206) {
-                    lastDlError = "HTTP $code untuk ${job.name}"
+                    job.error = "HTTP $code"
+                    lastDlError = job.error
                     job.status = DownloadManager.STATUS_FAILED
                     return@Thread
                 }
@@ -861,7 +868,7 @@ class Bridge(
                 if (code == 206) {
                     if (reported > 0) job.total = existing + reported
                 } else {
-                    existing = 0
+                    existing = 0L
                     if (part.exists()) part.delete()
                     job.bytes = 0
                     if (reported > 0) job.total = reported
@@ -870,10 +877,11 @@ class Bridge(
 
                 conn.inputStream.use { input ->
                     FileOutputStream(part, existing > 0 && code == 206).use { out ->
-                        val buf = ByteArray(64 * 1024)
+                        val buf = ByteArray(128 * 1024)
                         while (true) {
                             if (job.cancelled) {
                                 job.status = DownloadManager.STATUS_FAILED
+                                job.error = "dibatalkan"
                                 return@Thread
                             }
                             if (job.paused) {
@@ -886,6 +894,7 @@ class Bridge(
                             job.bytes += n.toLong()
                             job.status = DownloadManager.STATUS_RUNNING
                         }
+                        out.flush()
                     }
                 }
                 if (job.cancelled) {
@@ -898,59 +907,52 @@ class Bridge(
                 }
                 if (dest.exists()) dest.delete()
                 if (!part.renameTo(dest)) {
-                    part.copyTo(dest, overwrite = true)
+                    part.inputStream().use { inp ->
+                        FileOutputStream(dest).use { out -> inp.copyTo(out) }
+                    }
                     part.delete()
                 }
                 job.bytes = dest.length()
                 if (job.total <= 0) job.total = job.bytes
                 job.status = DownloadManager.STATUS_SUCCESSFUL
             } catch (e: Exception) {
-                if (job.paused) job.status = DownloadManager.STATUS_PAUSED
-             @Volatile private var lastDlError: String = ""
-
-    @JavascriptInterface fun lastDownloadError(): String = lastDlError
+                if (job.paused) {
+                    job.status = DownloadManager.STATUS_PAUSED
+                } else {
+                    job.error = e.message ?: "error"
+                    lastDlError = job.error
+                    job.status = DownloadManager.STATUS_FAILED
+                }
+            }
+        }.start()
+    }
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
         lastDlError = ""
         val pure = name.substringAfterLast('/').substringAfterLast('\\')
         if (!safe(pure)) {
-            lastDlError = "nama file tidak valid: $name"
+            lastDlError = "nama file tidak valid"
             return -1L
         }
         if (url.isBlank() || !(url.startsWith("http://") || url.startsWith("https://"))) {
-            lastDlError = "URL unduhan kosong/tidak valid"
+            lastDlError = "URL tidak valid"
             return -1L
         }
         dir()
-        // Resume paused job same file
         dlJobs.values.firstOrNull { it.name == pure && it.status == DownloadManager.STATUS_PAUSED }?.let { job ->
             job.paused = false
             job.cancelled = false
             job.status = DownloadManager.STATUS_RUNNING
+            job.error = ""
             runDlJob(job)
             return job.id
         }
         val id = dlSeq.incrementAndGet()
-        val job = DlJob(id, url, pure, token)
+        val job = DlJob(id = id, url = url, name = pure, token = token)
         val part = File(dir(), pure + ".part")
         if (part.exists()) job.bytes = part.length()
         dlJobs[id] = job
         runDlJob(job)
-
-        // Also notify system so user sees Android download indicator
-        try {
-            val r = DownloadManager.Request(Uri.parse(url))
-                .setTitle(pure)
-                .setDescription("Box AI · unduhan model")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(true)
-            if (token.isNotBlank()) r.addRequestHeader("Authorization", "Bearer $token")
-            r.addRequestHeader("User-Agent", "BoxAI/2.2 Android")
-            // Don't set destination — our custom job writes the file; this is status-only mirror optional
-            // Skip DM enqueue to avoid double download — notification via in-app panel only
-        } catch (_: Exception) { }
-
         return id
     }
 
@@ -966,6 +968,7 @@ class Bridge(
         if (job.status == DownloadManager.STATUS_SUCCESSFUL) return true
         job.paused = false
         job.cancelled = false
+        job.error = ""
         job.status = DownloadManager.STATUS_RUNNING
         runDlJob(job)
         return true
@@ -975,8 +978,11 @@ class Bridge(
         val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L)
         val job = dlJobs[id]
         if (job != null) {
-            o.put("s", job.status).put("b", job.bytes).put("t", job.total).put("name", job.name)
-            if (job.status == DownloadManager.STATUS_FAILED && lastDlError.isNotBlank()) o.put("err", lastDlError)
+            o.put("s", job.status)
+            o.put("b", job.bytes)
+            o.put("t", job.total)
+            o.put("name", job.name)
+            if (job.error.isNotEmpty()) o.put("err", job.error)
             return o.toString()
         }
         try {
@@ -998,13 +1004,6 @@ class Bridge(
             job.paused = false
             job.status = DownloadManager.STATUS_FAILED
             try { File(dir(), job.name + ".part").delete() } catch (_: Exception) { }
-            dlJobs.remove(id)
-            return
-        }
-        try { dm.remove(id) } catch (_: Exception) { }
-    }
-
-  try { File(dir(), job.name + ".part").delete() } catch (_: Exception) { }
             dlJobs.remove(id)
             return
         }
