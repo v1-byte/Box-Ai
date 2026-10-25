@@ -44,12 +44,14 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
+        // JANGAN edge-to-edge: biarkan sistem Android yang sisakan ruang
+        // status bar + navigasi. Ini paling andal di semua HP (notch, 3-button, gesture).
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        window.statusBarColor = Color.parseColor("#08090C")
+        window.navigationBarColor = Color.parseColor("#08090C")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isNavigationBarContrastEnforced = false
-            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = true
+            window.isStatusBarContrastEnforced = true
         }
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.isAppearanceLightStatusBars = false
@@ -57,32 +59,21 @@ class MainActivity : AppCompatActivity() {
 
         webView = WebView(this).apply {
             setBackgroundColor(Color.parseColor("#08090C"))
-            fitsSystemWindows = false
         }
         setContentView(webView)
 
-        // PAD WebView dengan system bars + cutout + IME (paling andal di Android WebView).
+        // Keyboard saja yang kita pantau (sembunyikan tabbar)
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
-            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val dens = resources.displayMetrics.density
-            // Fallback minimum: status bar ~24dp, navigasi 3 tombol ~48dp
-            val minTop = (24 * dens).toInt()
-            val minBottom = (48 * dens).toInt()
-            val top = maxOf(sys.top, cut.top, minTop)
-            val left = maxOf(sys.left, cut.left)
-            val right = maxOf(sys.right, cut.right)
-            val sysBottom = maxOf(sys.bottom, cut.bottom)
-            val bottomBar = if (sysBottom > 0) sysBottom else minBottom
-            val bottom = maxOf(bottomBar, ime.bottom)
-            v.setPadding(left, top, right, bottom)
             val kbPx = if (ime.bottom > 40) (ime.bottom / dens).toInt() else 0
+            // Jangan pad manual system bars — sudah diurus setDecorFitsSystemWindows(true)
+            v.setPadding(0, 0, 0, 0)
             webView.evaluateJavascript(
                 "window.__kbHeight=" + kbPx + ";document.documentElement.style.setProperty('--kb','" + kbPx + "px');window.dispatchEvent(new Event('boxkb'));",
                 null
             )
-            WindowInsetsCompat.CONSUMED
+            insets
         }
 
         val loader = WebViewAssetLoader.Builder()
@@ -120,10 +111,7 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
-            override fun onPageFinished(view: WebView?, url: String?) {
-                // Paksa request ulang insets setelah page load
-                ViewCompat.requestApplyInsets(webView)
-            }
+            override fun onPageFinished(view: WebView?, url: String?) { }
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
