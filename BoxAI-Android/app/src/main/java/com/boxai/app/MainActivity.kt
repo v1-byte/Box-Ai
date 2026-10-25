@@ -61,33 +61,27 @@ class MainActivity : AppCompatActivity() {
         }
         setContentView(webView)
 
-        // Kirim inset nyata ke CSS (WebView sering tidak isi env(safe-area))
+        // PAD WebView dengan system bars + cutout + IME (paling andal di Android WebView).
         ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
             val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val dens = resources.displayMetrics.density
-            val top = maxOf(sys.top, cut.top) / dens
-            val bottom = maxOf(sys.bottom, cut.bottom) / dens
-            val left = maxOf(sys.left, cut.left) / dens
-            val right = maxOf(sys.right, cut.right) / dens
-            val kb = ime.bottom / dens
-            // Jangan pad WebView — CSS yang atur layout
-            v.setPadding(0, 0, 0, 0)
-            val js = """
-                (function(){
-                  var r=document.documentElement.style;
-                  r.setProperty('--sat','${"%.1f".format(top)}px');
-                  r.setProperty('--sab','${"%.1f".format(bottom)}px');
-                  r.setProperty('--sal','${"%.1f".format(left)}px');
-                  r.setProperty('--sar','${"%.1f".format(right)}px');
-                  r.setProperty('--kb','${"%.1f".format(if (kb > 0) kb else 0f)}px');
-                  window.__kbHeight=${if (kb > 40) kb.toInt() else 0};
-                  window.dispatchEvent(new Event('boxkb'));
-                  window.dispatchEvent(new Event('boxinsets'));
-                })();
-            """.trimIndent()
-            webView.evaluateJavascript(js, null)
+            // Fallback minimum: status bar ~24dp, navigasi 3 tombol ~48dp
+            val minTop = (24 * dens).toInt()
+            val minBottom = (48 * dens).toInt()
+            val top = maxOf(sys.top, cut.top, minTop)
+            val left = maxOf(sys.left, cut.left)
+            val right = maxOf(sys.right, cut.right)
+            val sysBottom = maxOf(sys.bottom, cut.bottom)
+            val bottomBar = if (sysBottom > 0) sysBottom else minBottom
+            val bottom = maxOf(bottomBar, ime.bottom)
+            v.setPadding(left, top, right, bottom)
+            val kbPx = if (ime.bottom > 40) (ime.bottom / dens).toInt() else 0
+            webView.evaluateJavascript(
+                "window.__kbHeight=" + kbPx + ";document.documentElement.style.setProperty('--kb','" + kbPx + "px');window.dispatchEvent(new Event('boxkb'));",
+                null
+            )
             WindowInsetsCompat.CONSUMED
         }
 
