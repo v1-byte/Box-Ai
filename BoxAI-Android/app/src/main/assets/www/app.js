@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.8';
+  const APP_VERSION = '2.2.9';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -379,9 +379,10 @@
       have.add(id);
       reg(f.name, f.size || 0, 'local');
       S.dl[id] = true;
-      // Simpan nama file asli agar generate() menemukan path yang benar
-      if (MMETA_DEF[id]) MMETA_DEF[id].file = f.name;
-      else MMETA_DEF[id] = { file: f.name, arch: 'GGUF', quant: 'GGUF', ctx: 4096, tpl: 'chatml' };
+      // Path absolut jika ada (model di luar folder app)
+      const fileRef = f.path || f.name;
+      if (MMETA_DEF[id]) { MMETA_DEF[id].file = fileRef; MMETA_DEF[id].path = f.path || ''; }
+      else MMETA_DEF[id] = { file: fileRef, path: f.path || '', arch: 'GGUF', quant: 'GGUF', ctx: 4096, tpl: 'chatml' };
     });
     for (let i = MODELS.length - 1; i >= 0; i--) {
       const m = MODELS[i];
@@ -666,6 +667,21 @@
     },
     async version() {
       startInAppUpdate(true);
+    },
+    async scanModels() {
+      if (!NATIVE) return toast('Hanya di aplikasi Android');
+      if (NATIVE.hasStoragePermission && !NATIVE.hasStoragePermission() && NATIVE.requestStoragePermission) {
+        toast('Izinkan akses semua file, lalu ketuk Pindai lagi');
+        NATIVE.requestStoragePermission();
+        return;
+      }
+      toast('Memindai model…');
+      syncLocal();
+      renderModels();
+      renderSettings();
+      updateTop();
+      const n = MODELS.filter(m => S.dl[m.id]).length;
+      toast(n ? (n + ' model ditemukan') : 'Tidak ada file .gguf. Cek folder Download atau izinkan akses file.');
     }
   };
   $$('[data-set]').forEach(el => el.addEventListener('click', () => ACTIONS[el.dataset.set] && ACTIONS[el.dataset.set]()));
@@ -1280,6 +1296,21 @@
     } catch (e) {}
   }
   setTimeout(checkUpdateSilent, 2800);
+  // Minta izin storage + rescan model (Download / app lain)
+  setTimeout(() => {
+    try {
+      if (!NATIVE) return;
+      const n = JSON.parse(NATIVE.listModels() || '[]');
+      if ((!n || !n.length) && NATIVE.requestStoragePermission) {
+        // Jika belum ada model, minta akses folder agar scan lebih luas
+        if (NATIVE.hasStoragePermission && !NATIVE.hasStoragePermission()) {
+          toast('Izinkan akses file agar model di Download / app lain terdeteksi');
+          NATIVE.requestStoragePermission();
+        }
+      }
+      setTimeout(() => { syncLocal(); renderModels(); renderSettings(); updateTop(); }, 1500);
+    } catch (e) {}
+  }, 3500);
 
   syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); updateTop(); } });

@@ -30,6 +30,9 @@ import org.json.JSONObject
 import androidx.core.content.FileProvider
 import android.content.pm.PackageManager
 import android.provider.Settings
+import android.Manifest
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -161,148 +164,56 @@ class Bridge(
 ) {
     private val dm get() = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun dir(): File = (ctx.getExternalFilesDir("models") ?: File(ctx.filesDir, "models")).also { it.mkdirs() }
-    private fun safe(n: String) = n.isNotBlank() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
 
-    private fun clean(s: String) = s.replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&quot;", "\"")
-        .replace("&#x27;", "'").replace("&lt;", "<").replace("&gt;", ">").trim()
-
-    @Volatile private var currentModel: LlamaModel? = null
-    @Volatile private var currentModelPath: String? = null
-    private val engineLock = Mutex()
-
-    @JavascriptInterface fun webSearch(id: Int, query: String) {
-        Thread {
-            val out = JSONObject().put("results", JSONArray())
-            try {
-                val c = java.net.URL("https://html.duckduckgo.com/html/?q=" + java.net.URLEncoder.encode(query, "UTF-8"))
-                    .openConnection() as java.net.HttpURLConnection
-                c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) BoxAI")
-                c.connectTimeout = 10000; c.readTimeout = 10000
-                val html = c.inputStream.bufferedReader().use { it.readText() }
-                val links = Regex("""class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL).findAll(html).toList()
-                val snips = Regex("""class="result__snippet"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL).findAll(html).toList()
-                val arr = JSONArray()
-                for (i in 0 until minOf(5, links.size)) {
-                    var u = links[i].groupValues[1].replace("&amp;", "&")
-                    Regex("uddg=([^&]+)").find(u)?.let { u = java.net.URLDecoder.decode(it.groupValues[1], "UTF-8") }
-                    if (u.startsWith("//")) u = "https:$u"
-                    arr.put(JSONObject().put("title", clean(links[i].groupValues[2])).put("url", u)
-                        .put("snippet", if (i < snips.size) clean(snips[i].groupValues[1]) else ""))
-                }
-                out.put("results", arr)
-            } catch (e: Exception) { out.put("error", "Pencarian gagal: " + (e.message ?: "koneksi")) }
-            post("window.BoxSearch&&BoxSearch.cb($id,$out)")
-        }.start()
+    /** Semua folder yang mungkin berisi GGUF (app sendiri + lokasi umum). */
+    private fun modelScanRoots(): List<File> {
+        val roots = LinkedHashSet<File>()
+        roots.add(dir())
+        // Folder app (induk)
+        ctx.getExternalFilesDir(null)?.let { roots.add(it); roots.add(File(it, "models")) }
+        // Public common paths
+        val base = Environment.getExternalStorageDirectory()
+        val names = listOf(
+            "Download", "Downloads", "Documents", "Models", "models", "GGUF", "gguf",
+            "BoxAI", "Box-AI", "llama", "Llama", "LMStudio", "Ollama", "PocketPal",
+            "Android/media", "Android/data"
+        )
+        names.forEach { n ->
+            roots.add(File(base, n))
+        }
+        // Beberapa path app AI lain (read-only; boleh gagal)
+        val pkgs = listOf(
+            "com.pocketpal", "com.pocketpalai", "ai.pocketpal",
+            "com.llamalab", "com.nexa", "com.mlc", "com.lmstudio"
+        )
+        val androidData = File(base, "Android/data")
+        pkgs.forEach { pkg ->
+            roots.add(File(androidData, "$pkg/files"))
+            roots.add(File(androidData, "$pkg/files/models"))
+            roots.add(File(androidData, "$pkg/cache"))
+        }
+        return roots.filter { it.exists() && it.isDirectory }
     }
 
-    @JavascriptInterface fun engineAvailable(): Boolean = true
-
-    @JavascriptInterface fun generate(json: String) {
-        scope.launch(Dispatchers.Default) {
+    /** Depth-limited scan for *.gguf */
+    private fun scanGguf(root: File, depth: Int, out: MutableList<File>, seen: MutableSet<String>) {
+        if (depth < 0) return
+        val list = try { root.listFiles() } catch (_: Exception) { null } ?: return
+        for (f in list) {
             try {
-                val o = JSONObject(json)
-                val modelName = o.optString("model", "")
-                if (modelName.isBlank() || !safe(modelName)) {
-                    post("window.BoxEngine&&BoxEngine.error('Model tidak valid')")
-                    return@launch
+                if (f.isFile && f.name.endsWith(".gguf", true) && f.length() > 1024) {
+                    val key = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
+                    if (seen.add(key)) out.add(f)
+                } else if (f.isDirectory && !f.name.startsWith(".")) {
+                    // Hindari folder raksasa
+                    if (f.name.equals("cache", true) && depth < 2) continue
+                    scanGguf(f, depth - 1, out, seen)
                 }
-                val modelFile = File(dir(), modelName)
-                if (!modelFile.exists()) {
-                    post("window.BoxEngine&&BoxEngine.error('File model tidak ditemukan: $modelName')")
-                    return@launch
-                }
-
-                val nCtx = o.optInt("n_ctx", 2048).coerceIn(512, 8192)
-                val maxTok = o.optInt("max_tokens", 512).coerceIn(16, 4096)
-                val temp = o.optDouble("temp", 0.7).toFloat().coerceIn(0f, 2f)
-                val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
-                val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
-
-                val path = modelFile.absolutePath
-                val model = engineLock.withLock {
-                    if (currentModel != null && currentModelPath == path) {
-                        currentModel!!
-                    } else {
-                        currentModel?.let { runCatching { Llama.releaseModel(it) } }
-                        currentModel = null
-                        currentModelPath = null
-                        val cfg = LlamaConfig(
-                            contextSize = nCtx,
-                            threads = threads,
-                            temperature = temp,
-                            topP = topP,
-                        )
-                        val m = Llama.loadModel(path, cfg)
-                        currentModel = m
-                        currentModelPath = path
-                        m
-                    }
-                }
-
-                val messages = o.optJSONArray("messages") ?: JSONArray()
-                var systemPrompt = ""
-                val userParts = mutableListOf<String>()
-                for (i in 0 until messages.length()) {
-                    val m = messages.getJSONObject(i)
-                    val role = m.optString("role", "")
-                    val content = m.optString("content", "")
-                    when (role) {
-                        "system" -> systemPrompt = content
-                        "user" -> userParts.add(content)
-                        "assistant" -> userParts.add("Assistant: $content")
-                    }
-                }
-                val prompt = userParts.lastOrNull() ?: ""
-                val history = if (userParts.size > 1) {
-                    userParts.dropLast(1).takeLast(4).joinToString("\n")
-                } else ""
-                val fullPrompt = if (history.isNotBlank()) "$history\n$prompt" else prompt
-
-                val result = Llama.complete(
-                    model,
-                    prompt = fullPrompt,
-                    systemPrompt = systemPrompt.ifBlank { "You are Box AI, a helpful private on-device assistant. Answer in the same language as the user." },
-                    maxTokens = maxTok,
-                )
-
-                val text = result.text.trim()
-                if (text.isEmpty()) {
-                    post("window.BoxEngine&&BoxEngine.error('Model tidak menghasilkan jawaban')")
-                    return@launch
-                }
-                val chunkSize = 6
-                var i = 0
-                while (i < text.length) {
-                    val end = minOf(i + chunkSize, text.length)
-                    val chunk = text.substring(i, end)
-                    val esc = chunk
-                        .replace("\\", "\\\\")
-                        .replace("'", "\\'")
-                        .replace("\n", "\\n")
-                        .replace("\r", "")
-                    post("window.BoxEngine&&BoxEngine.token('$esc')")
-                    delay(10)
-                    i = end
-                }
-                post("window.BoxEngine&&BoxEngine.done()")
-            } catch (e: Exception) {
-                val msg = (e.message ?: "unknown").replace("'", "\\'").replace("\n", " ")
-                post("window.BoxEngine&&BoxEngine.error('$msg')")
-            }
+            } catch (_: Exception) { }
         }
     }
 
-    @JavascriptInterface fun unloadModel() {
-        scope.launch(Dispatchers.Default) {
-            engineLock.withLock {
-                currentModel?.let { runCatching { Llama.releaseModel(it) } }
-                currentModel = null
-                currentModelPath = null
-            }
-        }
-    }
-
-    /** Nama file yang sedang diunduh (pending/running/paused) — jangan tampilkan dulu. */
+    /** Nama file yang sedang diunduh (pending/running/paused). */
     private fun busyNames(): Set<String> {
         val out = HashSet<String>()
         try {
@@ -321,28 +232,29 @@ class Bridge(
     }
 
     /**
-     * Scan folder models + pastikan unduhan sukses ikut terdeteksi.
-     * Juga pindahkan file dari lokasi DownloadManager jika masih di path lain.
+     * Scan luas: folder app + Download + Documents + folder model umum + unduhan sukses.
+     * Return JSON: [{name, size, mod, path}]
      */
     @JavascriptInterface fun listModels(): String {
-        val d = dir()
         val busy = busyNames()
         val seen = HashSet<String>()
-        val a = JSONArray()
+        val files = mutableListOf<File>()
 
-        // 1) File di folder app
-        d.listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) && it.length() > 1024 }?.forEach { f ->
-            if (f.name !in busy && seen.add(f.name)) {
-                a.put(JSONObject().put("name", f.name).put("size", f.length()).put("mod", f.lastModified()))
+        // 1) Scan roots
+        for (root in modelScanRoots()) {
+            val depth = when {
+                root.absolutePath.contains("Android/data") -> 3
+                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 2
+                else -> 3
             }
+            scanGguf(root, depth, files, seen)
         }
 
-        // 2) Unduhan sukses yang mungkin belum terlihat / path beda
+        // 2) Unduhan sukses DownloadManager → pastikan ada di folder app
         try {
             dm.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL)).use { c ->
                 val uriIdx = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
                 val titleIdx = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
-                val sizeIdx = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
                 while (c.moveToNext()) {
                     val title = c.getString(titleIdx) ?: ""
                     val local = c.getString(uriIdx) ?: ""
@@ -350,10 +262,9 @@ class Bridge(
                         title.endsWith(".gguf", true) -> title
                         else -> Uri.parse(local).lastPathSegment ?: ""
                     }
-                    if (!name.endsWith(".gguf", true) || !safe(name) || name in seen) continue
-                    val dest = File(d, name)
+                    if (!name.endsWith(".gguf", true) || !safe(name)) continue
+                    val dest = File(dir(), name)
                     if (!dest.exists() || dest.length() < 1024) {
-                        // Coba salin dari URI lokal DownloadManager
                         try {
                             val srcUri = Uri.parse(local)
                             ctx.contentResolver.openInputStream(srcUri)?.use { input ->
@@ -361,14 +272,61 @@ class Bridge(
                             }
                         } catch (_: Exception) { }
                     }
-                    if (dest.exists() && dest.length() > 1024 && seen.add(name)) {
-                        a.put(JSONObject().put("name", name).put("size", dest.length()).put("mod", dest.lastModified()))
+                    if (dest.exists() && dest.length() > 1024) {
+                        val key = try { dest.canonicalPath } catch (_: Exception) { dest.absolutePath }
+                        if (seen.add(key)) files.add(dest)
                     }
                 }
             }
         } catch (_: Exception) { }
 
+        val a = JSONArray()
+        files.sortedByDescending { it.lastModified() }.forEach { f ->
+            if (f.name in busy) return@forEach
+            a.put(
+                JSONObject()
+                    .put("name", f.name)
+                    .put("size", f.length())
+                    .put("mod", f.lastModified())
+                    .put("path", f.absolutePath)
+            )
+        }
         return a.toString()
+    }
+
+    /** Minta izin baca storage agar scan Download/folder lain bisa jalan. */
+    @JavascriptInterface fun requestStoragePermission(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (Environment.isExternalStorageManager()) return true
+                val i = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                i.data = Uri.parse("package:" + ctx.packageName)
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctx.startActivity(i)
+                false
+            } else if (Build.VERSION.SDK_INT >= 23) {
+                val ok = ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (!ok && ctx is android.app.Activity) {
+                    ActivityCompat.requestPermissions(
+                        ctx as android.app.Activity,
+                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                        9911
+                    )
+                }
+                ok
+            } else true
+        } catch (_: Exception) { false }
+    }
+
+    @JavascriptInterface fun hasStoragePermission(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
+            else if (Build.VERSION.SDK_INT >= 23)
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                    PackageManager.PERMISSION_GRANTED
+            else true
+        } catch (_: Exception) { false }
     }
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
