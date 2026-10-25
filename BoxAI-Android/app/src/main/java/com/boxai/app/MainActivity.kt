@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        try {
         // JANGAN edge-to-edge: biarkan sistem Android yang sisakan ruang
         // status bar + navigasi. Ini paling andal di semua HP (notch, 3-button, gesture).
         WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -130,6 +130,15 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl("https://appassets.androidplatform.net/www/index.html")
         } else {
             webView.restoreState(savedInstanceState)
+        }
+        } catch (e: Exception) {
+            // Fallback minimal UI jika ada error fatal
+            val tv = android.widget.TextView(this)
+            tv.text = "Box AI error: " + (e.message ?: e.javaClass.simpleName)
+            tv.setTextColor(Color.WHITE)
+            tv.setBackgroundColor(Color.parseColor("#08090C"))
+            tv.setPadding(40, 80, 40, 40)
+            setContentView(tv)
         }
     }
 
@@ -432,13 +441,10 @@ class Bridge(
     /** Versi app yang terpasang (versionName). */
     @JavascriptInterface fun appVersion(): String {
         return try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.PackageInfoFlags.of(0)).versionName ?: "0"
-            } else {
-                @Suppress("DEPRECATION")
-                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"
-            }
-        } catch (_: Exception) { "0" }
+            @Suppress("DEPRECATION")
+            val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+            info.versionName ?: "2.2.7"
+        } catch (_: Exception) { "2.2.7" }
     }
 
     /** Unduh APK update ke folder app. Return download id atau -1. */
