@@ -2,6 +2,7 @@ package com.boxai.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Bundle
 import android.webkit.WebResourceRequest
@@ -10,6 +11,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -34,6 +36,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.provider.Settings
 import android.provider.MediaStore
+import android.provider.DocumentsContract
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -46,6 +50,65 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var bridge: Bridge
+
+    /** SAF tree picker — same idea as Acode: user grants a folder, we keep persistable URI. */
+    private val treeLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) {
+            runOnUiThread {
+                webView.evaluateJavascript(
+                    "window.onBoxTreeGranted&&onBoxTreeGranted(false)", null
+                )
+            }
+            return@registerForActivityResult
+        }
+        try {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, flags)
+        } catch (_: Exception) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) { }
+        }
+        val prefs = getSharedPreferences("boxai_trees", MODE_PRIVATE)
+        val set = prefs.getStringSet("uris", emptySet())!!.toMutableSet()
+        set.add(uri.toString())
+        prefs.edit().putStringSet("uris", set).apply()
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "window.onBoxTreeGranted&&onBoxTreeGranted(true)", null
+            )
+        }
+    }
+
+    fun openTreePicker() {
+        try {
+            // Prefer starting at internal storage root (primary)
+            val initial = try {
+                DocumentsContract.buildDocumentUri(
+                    "com.android.externalstorage.documents",
+                    "primary:"
+                )
+            } catch (_: Exception) { null }
+            treeLauncher.launch(initial)
+        } catch (_: Exception) {
+            treeLauncher.launch(null)
+        }
+    }
+
+    fun treeUris(): List<Uri> {
+        val prefs = getSharedPreferences("boxai_trees", MODE_PRIVATE)
+        val fromPrefs = prefs.getStringSet("uris", emptySet())!!.mapNotNull {
+            try { Uri.parse(it) } catch (_: Exception) { null }
+        }
+        // Also include any persistable permissions still held
+        val held = contentResolver.persistedUriPermissions.map { it.uri }
+        return (fromPrefs + held).distinct()
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,10 +165,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.addJavascriptInterface(
-            Bridge(this, scope) { js -> runOnUiThread { webView.evaluateJavascript(js, null) } },
-            "BoxNative"
-        )
+        bridge = Bridge(this, scope) { js -> runOnUiThread { webView.evaluateJavascript(js, null) } }
+        webView.addJavascriptInterface(bridge, "BoxNative")
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
@@ -159,10 +220,11 @@ class MainActivity : AppCompatActivity() {
 }
 
 class Bridge(
-    private val ctx: Context,
+    private val activity: MainActivity,
     private val scope: CoroutineScope,
     private val post: (String) -> Unit
 ) {
+    private val ctx: Context get() = activity
     private val dm get() = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun dir(): File = (ctx.getExternalFilesDir("models") ?: File(ctx.filesDir, "models")).also { it.mkdirs() }
     private fun safe(n: String) = n.isNotBlank() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
@@ -510,6 +572,9 @@ class Bridge(
         // 1) MediaStore (shared storage index — works with All files / media perms)
         scanMediaStoreGguf(files, seenPath)
 
+        // 1b) SAF trees granted by user (Acode-style folder access)
+        scanSafTrees(files, seenPath)
+
         // 2) Public standard dirs
         try {
             listOf(
@@ -586,6 +651,7 @@ class Bridge(
             val media = mutableListOf<File>()
             scanMediaStoreGguf(media, seen)
             o.put("mediaStoreGguf", media.size)
+            o.put("treeAccess", activity.treeUris().size)
             val deep = try { JSONArray(listModelsDeep()).length() } catch (_: Exception) { -1 }
             o.put("deepTotal", deep)
             o.put("modelsDir", dir().absolutePath)
@@ -630,6 +696,126 @@ class Bridge(
                     PackageManager.PERMISSION_GRANTED
             else true
         } catch (_: Exception) { false }
+    }
+
+    /**
+     * Acode-style: open system folder picker (SAF).
+     * User should pick internal storage root or /Download or /model ai —
+     * grant is persisted and used by listModelsDeep.
+     */
+    @JavascriptInterface fun requestTreeAccess(): Boolean {
+        return try {
+            activity.runOnUiThread { activity.openTreePicker() }
+            true
+        } catch (_: Exception) { false }
+    }
+
+    @JavascriptInterface fun treeAccessCount(): Int = activity.treeUris().size
+
+    @JavascriptInterface fun clearTreeAccess(): Boolean {
+        return try {
+            for (uri in activity.treeUris()) {
+                try {
+                    activity.contentResolver.releasePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (_: Exception) { }
+            }
+            activity.getSharedPreferences("boxai_trees", Context.MODE_PRIVATE)
+                .edit().remove("uris").apply()
+            true
+        } catch (_: Exception) { false }
+    }
+
+    /** Walk SAF trees for .gguf; copy into app models dir if we only have a content stream. */
+    private fun scanSafTrees(out: MutableList<File>, seen: MutableSet<String>) {
+        for (tree in activity.treeUris()) {
+            try {
+                val root = DocumentFile.fromTreeUri(ctx, tree) ?: continue
+                walkDocument(root, 5, out, seen)
+            } catch (_: Exception) { }
+        }
+    }
+
+    private fun walkDocument(dir: DocumentFile, depth: Int, out: MutableList<File>, seen: MutableSet<String>) {
+        if (depth < 0) return
+        val kids = try { dir.listFiles() } catch (_: Exception) { return }
+        for (f in kids) {
+            try {
+                val name = f.name ?: continue
+                if (f.isFile && name.endsWith(".gguf", true) && f.length() >= 5L * 1024L * 1024L) {
+                    val local = materializeDocument(f, name) ?: continue
+                    val key = try { local.canonicalPath } catch (_: Exception) { local.absolutePath }
+                    if (seen.add(key)) out.add(local)
+                } else if (f.isDirectory && !name.startsWith(".")) {
+                    // Skip huge system trees
+                    val skip = name.equals("Android", true) && depth < 4
+                    if (!skip) walkDocument(f, depth - 1, out, seen)
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    /**
+     * Prefer real filesystem path when possible; otherwise copy into app models (once).
+     * Llama needs a real path for mmap.
+     */
+    private fun materializeDocument(doc: DocumentFile, name: String): File? {
+        if (!safe(name)) return null
+        // Already in app models?
+        val dest = File(dir(), name)
+        if (dest.exists() && dest.length() > 1024) return dest
+        // Try to resolve path from URI (works for many primary:… documents)
+        val path = tryResolvePath(doc.uri)
+        if (path != null) {
+            val f = File(path)
+            if (f.isFile && f.canRead() && f.length() > 1024) return f
+        }
+        // Stream-copy into app models (only if not already partial)
+        return try {
+            if (dest.exists()) dest.delete()
+            ctx.contentResolver.openInputStream(doc.uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (dest.exists() && dest.length() > 1024) dest else null
+        } catch (_: Exception) {
+            try { dest.delete() } catch (_: Exception) { }
+            null
+        }
+    }
+
+    private fun tryResolvePath(uri: Uri): String? {
+        // content://com.android.externalstorage.documents/document/primary%3ADownload%2Ffoo.gguf
+        try {
+            if (DocumentsContract.isDocumentUri(ctx, uri)) {
+                val docId = DocumentsContract.getDocumentId(uri)
+                if (docId.startsWith("primary:")) {
+                    val rel = Uri.decode(docId.removePrefix("primary:"))
+                    val base = Environment.getExternalStorageDirectory()
+                    val f = File(base, rel)
+                    if (f.exists()) return f.absolutePath
+                }
+                // raw paths on some OEMs
+                if (docId.startsWith("/")) {
+                    val f = File(docId)
+                    if (f.exists()) return f.absolutePath
+                }
+            }
+        } catch (_: Exception) { }
+        // MediaStore DATA
+        try {
+            ctx.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val i = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (i >= 0) {
+                        val p = c.getString(i)
+                        if (!p.isNullOrBlank() && File(p).exists()) return p
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+        return null
     }
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {

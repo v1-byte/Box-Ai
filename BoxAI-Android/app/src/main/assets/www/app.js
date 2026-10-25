@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.15';
+  const APP_VERSION = '2.2.16';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -695,11 +695,35 @@
     async version() {
       startInAppUpdate(true);
     },
+    async requestTree() {
+      if (!NATIVE || !NATIVE.requestTreeAccess) return toast('Hanya di aplikasi Android');
+      toast('Pilih folder — saran: Internal storage atau Download / model ai');
+      window.onBoxTreeGranted = function (ok) {
+        if (!ok) return toast('Dibatalkan');
+        toast('Akses folder tersimpan — memindai model…');
+        setTimeout(() => ACTIONS.scanModels(), 400);
+      };
+      NATIVE.requestTreeAccess();
+    },
     async scanModels() {
       if (!NATIVE) return toast('Hanya di aplikasi Android');
+      // 1) All-files (system setting)
       if (NATIVE.hasStoragePermission && !NATIVE.hasStoragePermission() && NATIVE.requestStoragePermission) {
-        toast('Izinkan akses semua file, lalu ketuk Pindai lagi');
+        toast('Izinkan akses semua file di pengaturan, lalu pindai lagi');
         NATIVE.requestStoragePermission();
+        return;
+      }
+      // 2) Acode-style: folder picker if belum pernah grant tree / hasil 0
+      let trees = 0;
+      try { trees = NATIVE.treeAccessCount ? NATIVE.treeAccessCount() : 0; } catch (e) {}
+      if (trees === 0 && NATIVE.requestTreeAccess) {
+        toast('Pilih folder penyimpanan (seperti Acode) — pilih Internal storage atau Download');
+        window.onBoxTreeGranted = function (ok) {
+          if (!ok) return toast('Akses folder dibatalkan');
+          toast('Folder diizinkan — memindai…');
+          setTimeout(() => ACTIONS.scanModels(), 400);
+        };
+        NATIVE.requestTreeAccess();
         return;
       }
       toast('Memindai semua model di perangkat…');
@@ -714,11 +738,20 @@
         toast(n + ' model ditemukan');
       } else {
         const tips = [];
-        if (dbg.allFiles === false) tips.push('All files access BELUM aktif untuk Box AI');
-        if (dbg.mediaStoreGguf === 0) tips.push('MediaStore 0 file .gguf');
-        if (dbg.rootsReadable === 0) tips.push('folder scan tidak terbaca');
-        tips.push('Salin .gguf ke /Download atau /model ai/ lalu pindai lagi');
+        if (dbg.allFiles === false) tips.push('All files belum aktif');
+        if ((dbg.treeAccess || 0) === 0) tips.push('belum pilih folder SAF');
+        if (dbg.mediaStoreGguf === 0) tips.push('MediaStore 0 .gguf');
+        tips.push('Settings → Pindai lagi, atau pilih folder Download/model ai');
         toast('Tidak ketemu. ' + tips.join(' · '));
+        // Offer tree picker again
+        if (NATIVE.requestTreeAccess) {
+          setTimeout(() => {
+            window.onBoxTreeGranted = function (ok) {
+              if (ok) setTimeout(() => ACTIONS.scanModels(), 400);
+            };
+            NATIVE.requestTreeAccess();
+          }, 600);
+        }
       }
     }
   };
