@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.24';
+  const APP_VERSION = '2.2.25';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -931,7 +931,7 @@
     dlState[id] = 'run';
     renderDlPanel();
     renderModels();
-    toast('Mengunduh ' + (m.short || fileName) + ' — tetap jalan jika keluar app');
+    toast('Unduhan cepat dimulai · multi-koneksi · notifikasi sistem');
     let did = -1;
     try {
       did = NATIVE.startDownload(m.url, fileName, tok);

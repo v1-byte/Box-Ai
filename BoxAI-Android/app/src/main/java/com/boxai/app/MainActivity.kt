@@ -821,51 +821,20 @@ class Bridge(
         return null
     }
 
-    // ---- System DownloadManager: background + notification + in-app % ----
-    private data class DlMeta(
-        val url: String,
-        val name: String,
-        val token: String,
-        @Volatile var paused: Boolean = false,
-        @Volatile var bytes: Long = 0,
-        @Volatile var total: Long = 0,
-        @Volatile var status: Int = DownloadManager.STATUS_RUNNING,
-        @Volatile var error: String = "",
-    )
-    private val dlMeta = ConcurrentHashMap<Long, DlMeta>()
+    // ---- Fast multi-connection download via ModelDownloadService ----
     @Volatile private var lastDlError: String = ""
 
-    @JavascriptInterface fun lastDownloadError(): String = lastDlError
+    @JavascriptInterface fun lastDownloadError(): String =
+        lastDlError.ifEmpty { ModelDownloadService.lastError }
 
-    /** Pindahkan hasil DM ke folder models dengan nama pasti. */
-    private fun finalizeDownload(id: Long, name: String) {
-        try {
-            dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
-                if (!c.moveToFirst()) return
-                val local = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)) ?: return
-                val src = when {
-                    local.startsWith("file://") -> File(Uri.parse(local).path ?: return)
-                    local.startsWith("content://") -> {
-                        val tmp = File(dir(), name + ".tmp")
-                        ctx.contentResolver.openInputStream(Uri.parse(local))?.use { inp ->
-                            FileOutputStream(tmp).use { out -> inp.copyTo(out, 256 * 1024) }
-                        } ?: return
-                        tmp
-                    }
-                    else -> File(local)
-                }
-                val dest = File(dir(), name)
-                if (src.absolutePath != dest.absolutePath) {
-                    if (dest.exists()) dest.delete()
-                    if (!src.renameTo(dest)) {
-                        src.inputStream().use { inp -> FileOutputStream(dest).use { out -> inp.copyTo(out, 256 * 1024) } }
-                        src.delete()
-                    }
-                }
-                // hapus .part sisa
-                File(dir(), name + ".part").delete()
-            }
-        } catch (_: Exception) { }
+    private fun dlIntent(action: String, id: Long = -1L, url: String = "", name: String = "", token: String = ""): Intent {
+        return Intent(ctx, ModelDownloadService::class.java).apply {
+            this.action = action
+            putExtra("id", id)
+            if (url.isNotEmpty()) putExtra("url", url)
+            if (name.isNotEmpty()) putExtra("name", name)
+            if (token.isNotEmpty()) putExtra("token", token)
+        }
     }
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
@@ -880,122 +849,56 @@ class Bridge(
             return -1L
         }
         dir()
-        // Hapus file gagal lama (biarkan .part tidak relevan untuk DM)
-        try { File(dir(), pure).takeIf { it.exists() && it.length() == 0L }?.delete() } catch (_: Exception) { }
-
-        return try {
-            val r = DownloadManager.Request(Uri.parse(url))
-                .setTitle(pure)
-                .setDescription("Box AI · unduhan model (lanjut meski app ditutup)")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(true)
-                .setAllowedNetworkTypes(
-                    DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
-                )
-                .setDestinationInExternalFilesDir(ctx, "models", pure)
-            if (token.isNotBlank()) r.addRequestHeader("Authorization", "Bearer $token")
-            r.addRequestHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13) BoxAI/2.2")
-            // HuggingFace often needs this
-            r.addRequestHeader("Accept", "*/*")
-            val id = dm.enqueue(r)
-            dlMeta[id] = DlMeta(url = url, name = pure, token = token)
-            id
-        } catch (e: Exception) {
-            lastDlError = e.message ?: "enqueue gagal"
-            -1L
+        // Resume paused job same file
+        ModelDownloadService.jobs.values.firstOrNull {
+            it.name == pure && it.status == ModelDownloadService.STATUS_PAUSED
+        }?.let { job ->
+            val i = dlIntent(ModelDownloadService.ACTION_RESUME, job.id)
+            if (android.os.Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            return job.id
         }
+        val id = ModelDownloadService.nextId()
+        val i = dlIntent(ModelDownloadService.ACTION_START, id, url, pure, token)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+        } catch (e: Exception) {
+            lastDlError = e.message ?: "gagal start service"
+            return -1L
+        }
+        return id
     }
 
     @JavascriptInterface fun pauseDownload(id: Long): Boolean {
-        // DownloadManager tidak support pause resmi — simpan meta & remove (bisa dilanjut ulang dari awal)
-        val meta = dlMeta[id] ?: return false
-        try {
-            // catat progress terakhir
-            dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
-                if (c.moveToFirst()) {
-                    meta.bytes = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                    meta.total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                }
-            }
-            dm.remove(id)
-        } catch (_: Exception) { }
-        meta.paused = true
-        meta.status = DownloadManager.STATUS_PAUSED
-        // simpan dengan id negatif sentinel agar status() masih bisa baca
-        dlMeta[-id] = meta
-        dlMeta.remove(id)
+        ctx.startService(dlIntent(ModelDownloadService.ACTION_PAUSE, id))
+        ModelDownloadService.jobs[id]?.status = ModelDownloadService.STATUS_PAUSED
         return true
     }
 
     @JavascriptInterface fun resumeDownload(id: Long): Boolean {
-        // Coba meta dari id atau -id (setelah pause)
-        val meta = dlMeta[id] ?: dlMeta[-id] ?: return false
-        if (meta.status == DownloadManager.STATUS_SUCCESSFUL) return true
-        dlMeta.remove(id)
-        dlMeta.remove(-id)
-        val newId = startDownload(meta.url, meta.name, meta.token)
-        if (newId < 0) return false
-        // JS harus update dlIds — return true saja; caller re-tracks via startDownload path
-        // Simpan mapping: kita return true, resumeDownload di JS memanggil startDownload ulang lebih aman
+        val job = ModelDownloadService.jobs[id] ?: return false
+        val i = dlIntent(ModelDownloadService.ACTION_RESUME, id)
+        if (android.os.Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
         return true
     }
 
     @JavascriptInterface fun status(id: Long): String {
         val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L)
-        // paused sentinel
-        dlMeta[-id]?.let { meta ->
-            if (meta.paused) {
-                o.put("s", DownloadManager.STATUS_PAUSED)
-                o.put("b", meta.bytes)
-                o.put("t", meta.total)
-                o.put("name", meta.name)
-                return o.toString()
-            }
+        val job = ModelDownloadService.jobs[id]
+        if (job != null) {
+            o.put("s", job.status)
+            o.put("b", job.bytes.get())
+            o.put("t", job.total.get())
+            o.put("name", job.name)
+            if (job.error.isNotEmpty()) o.put("err", job.error)
+            return o.toString()
         }
-        val meta = dlMeta[id]
-        try {
-            dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
-                if (c.moveToFirst()) {
-                    val s = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                    val b = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                    val t = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                    o.put("s", s).put("b", b).put("t", t)
-                    if (meta != null) {
-                        meta.bytes = b
-                        meta.total = t
-                        meta.status = s
-                        o.put("name", meta.name)
-                    }
-                    if (s == DownloadManager.STATUS_SUCCESSFUL && meta != null) {
-                        finalizeDownload(id, meta.name)
-                    }
-                    if (s == DownloadManager.STATUS_FAILED) {
-                        val reason = c.getColumnIndex(DownloadManager.COLUMN_REASON)
-                        if (reason >= 0) {
-                            val r = c.getInt(reason)
-                            o.put("err", "DM reason $r")
-                            lastDlError = "gagal reason $r"
-                        }
-                    }
-                    return o.toString()
-                }
-            }
-        } catch (_: Exception) { }
-        // fallback meta only
-        if (meta != null) {
-            o.put("s", meta.status).put("b", meta.bytes).put("t", meta.total).put("name", meta.name)
-            if (meta.error.isNotEmpty()) o.put("err", meta.error)
-        }
+        // Job selesai & dihapus dari map → anggap sukses jika file ada
+        // (JS sudah handle s=8; jika hilang, s=0 → trackDownload boleh timeout)
         return o.toString()
     }
 
     @JavascriptInterface fun cancel(id: Long) {
-        try { dm.remove(id) } catch (_: Exception) { }
-        val meta = dlMeta.remove(id) ?: dlMeta.remove(-id)
-        if (meta != null) {
-            try { File(dir(), meta.name + ".part").delete() } catch (_: Exception) { }
-        }
+        ctx.startService(dlIntent(ModelDownloadService.ACTION_CANCEL, id))
     }
 
     @JavascriptInterface fun deleteModel(name: String): Boolean = safe(name) && File(dir(), name).delete()
