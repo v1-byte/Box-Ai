@@ -102,10 +102,14 @@
     </header>
     <div class="scroll">
       <label class="search" id="hfBox" hidden><svg class="ic"><use href="#i-search"/></svg><input id="hfq" type="search" placeholder="Cari model GGUF di Hugging Face" autocomplete="off" /></label>
+      <label class="search" id="connBox" hidden><svg class="ic"><use href="#i-search"/></svg><input id="connUrl" type="url" placeholder="URL Cloudflared / R2 (…/ atau …/manifest.json)" autocomplete="off" /></label>
       <div class="chips">
         <button type="button" class="chip active" data-f="all">Semua</button>
         <button type="button" class="chip" data-f="dl">Terunduh</button>
         <button type="button" class="chip" data-f="hub">HF Hub</button>
+        <button type="button" class="chip" data-f="gh">GitHub</button>
+        <button type="button" class="chip" data-f="cf">Cloudflare</button>
+        <button type="button" class="chip" data-f="r2">R2</button>
       </div>
 
       <div class="skel-wrap">
@@ -174,6 +178,10 @@
       <h3 class="section-h">Alat</h3>
       <div class="list">
         <div class="li link" data-set="hfToken"><span>Token Hugging Face</span><span class="val" id="v-hf"></span></div>
+        <div class="li link" data-set="ghRepo"><span>GitHub repo model</span><span class="val" id="v-gh"></span></div>
+        <div class="li link" data-set="ghToken"><span>GitHub token (opsional)</span><span class="val" id="v-ght"></span></div>
+        <div class="li link" data-set="cfUrl"><span>Cloudflare tunnel URL</span><span class="val" id="v-cf"></span></div>
+        <div class="li link" data-set="r2Url"><span>R2 / public URL</span><span class="val" id="v-r2"></span></div>
         <div class="li link" data-set="talents"><span>Talents</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
         <div class="li link" data-go="bench"><span>Benchmark</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
       </div>

@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.16';
+  const APP_VERSION = '2.2.17';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -23,7 +23,7 @@
     temp: 0.7, topp: 0.9, maxTok: 2048, ctx: 4096,
     active: '', dl: {}, pal: null, pals: [],
     cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
-    chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
+    chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', r2Url: '', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
@@ -456,6 +456,126 @@
   $('#hubList').addEventListener('click', e => { const c = e.target.closest('.model-card'); if (c) hfRepo(c.dataset.repo); });
   $('#hfq').addEventListener('input', e => { clearTimeout(hubT); hubT = setTimeout(() => hfSearch(e.target.value.trim()), 450); });
 
+  /* ================= CONNECTORS (GitHub / Cloudflared / R2) ================= */
+  let connCache = { gh: null, cf: null, r2: null };
+  function remoteCard(m) {
+    const local = MODELS.find(x => x.file === m.name || x.name === m.name.replace(/\.gguf$/i, ''));
+    const has = !!(local && S.dl[local.id]);
+    const id = has ? local.id : modelId(m.name);
+    const size = m.size ? fmtGB(m.size / 1073741824) : '—';
+    const src = m.source || 'remote';
+    return `<article class="model-card" data-id="${esc(id)}" data-remote="1" data-url="${esc(m.url)}" data-file="${esc(m.name)}" data-size="${m.size || 0}" data-src="${esc(src)}">
+      <div class="mc-top"><strong>${esc(m.name)}</strong><span class="badge">${esc(src)}</span></div>
+      <div class="kv"><span>Ukuran</span><span>${size}</span></div>
+      <div class="kv"><span>Status</span><span>${has ? 'Sudah di perangkat' : 'Belum diunduh'}</span></div>
+      <div class="mc-actions">${has
+        ? `<button type="button" class="btn primary" data-act="use">Pakai</button>`
+        : `<button type="button" class="btn primary btn-dl" data-act="rdl">Unduh</button>`}</div>
+    </article>`;
+  }
+  function renderRemoteList(list, emptyMsg) {
+    const L = $('#hubList');
+    if (!list || !list.length) {
+      L.innerHTML = '<p class="empty">' + esc(emptyMsg || 'Tidak ada model .gguf') + '</p>';
+      return;
+    }
+    // Dedup by name+size
+    const map = new Map();
+    list.forEach(m => {
+      if (!m || !m.name || !/\.gguf$/i.test(m.name)) return;
+      const k = m.name.toLowerCase() + '-' + (m.size || 0);
+      if (!map.has(k)) map.set(k, m);
+    });
+    const arr = Array.from(map.values());
+    L.innerHTML = '<p class="muted-line" style="margin:8px 12px">' + arr.length + ' model remote · unduh dicek agar tidak dobel dengan Terunduh</p>' +
+      arr.map(remoteCard).join('');
+  }
+  async function loadGithubModels() {
+    const L = $('#hubList');
+    L.innerHTML = '<p class="empty">Memuat GitHub Releases…</p>';
+    const repo = (S.ghRepo || 'v1-byte/Box-Ai').trim();
+    try {
+      const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'BoxAI-Connector' };
+      if (S.ghToken) headers.Authorization = 'Bearer ' + S.ghToken;
+      const r = await fetch('https://api.github.com/repos/' + encodeURI(repo) + '/releases?per_page=20', { headers });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const models = [];
+      (data || []).forEach(rel => {
+        (rel.assets || []).forEach(a => {
+          if (a.name && /\.gguf$/i.test(a.name)) {
+            models.push({ name: a.name, url: a.browser_download_url, size: a.size || 0, source: 'github' });
+          }
+        });
+      });
+      connCache.gh = models;
+      renderRemoteList(models, 'Tidak ada aset .gguf di releases repo ' + repo);
+    } catch (e) {
+      L.innerHTML = '<p class="empty">Gagal GitHub: ' + esc(e.message) + '. Atur repo/token di Settings.</p>';
+    }
+  }
+  async function loadManifestModels(kind) {
+    const L = $('#hubList');
+    const base = (kind === 'cf' ? S.cfUrl : S.r2Url) || '';
+    const typed = ($('#connUrl') && $('#connUrl').value.trim()) || '';
+    let url = (typed || base || '').replace(/\/$/, '');
+    if (!url) {
+      L.innerHTML = '<p class="empty">Isi URL ' + (kind === 'cf' ? 'Cloudflare Tunnel' : 'R2') + ' di kolom atas atau Settings, contoh: https://xxx.trycloudflare.com</p>';
+      return;
+    }
+    if (typed) {
+      if (kind === 'cf') S.cfUrl = typed; else S.r2Url = typed;
+      save();
+    }
+    L.innerHTML = '<p class="empty">Memuat manifest…</p>';
+    try {
+      let listUrl = url;
+      if (!/manifest\.json$/i.test(listUrl)) listUrl = url + '/manifest.json';
+      const r = await fetch(listUrl, { headers: { Accept: 'application/json' } });
+      if (!r.ok) throw new Error('manifest HTTP ' + r.status);
+      const list = await r.json();
+      if (!Array.isArray(list)) throw new Error('manifest harus array JSON');
+      const models = list.map(m => ({
+        name: m.name,
+        url: m.url || (url + '/' + m.name),
+        size: m.size || 0,
+        source: kind === 'cf' ? 'cloudflared' : 'r2'
+      })).filter(m => m.name && /\.gguf$/i.test(m.name));
+      connCache[kind] = models;
+      renderRemoteList(models, 'Manifest kosong / tanpa .gguf');
+    } catch (e) {
+      L.innerHTML = '<p class="empty">Gagal ' + kind + ': ' + esc(e.message) + '</p>';
+    }
+  }
+  function startRemoteDownload(file, url, size, source) {
+    if (!NATIVE) return toast('Hanya di aplikasi Android');
+    // Anti-dobel: sudah ada lokal dengan nama sama
+    const existing = MODELS.find(x => (x.file || '').toLowerCase() === file.toLowerCase() || x.name.toLowerCase() === file.replace(/\.gguf$/i, '').toLowerCase());
+    if (existing && S.dl[existing.id]) return toast('Sudah ada di perangkat — tidak unduh ulang');
+    const m = reg(file, size || 0, source || 'remote', url);
+    if (S.dl[m.id]) return toast('Sudah terunduh');
+    startDownload(m.id);
+  }
+  $('#hubList').addEventListener('click', e => {
+    const card = e.target.closest('.model-card[data-remote]');
+    if (!card) return;
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    if (act.dataset.act === 'rdl') {
+      startRemoteDownload(card.dataset.file, card.dataset.url, +card.dataset.size || 0, card.dataset.src);
+    } else if (act.dataset.act === 'use') {
+      const id = card.dataset.id;
+      if (S.dl[id]) { S.active = id; save(); updateTop(); toast(model(id).short + ' aktif'); go('chat'); }
+    }
+  });
+  $('#connUrl') && $('#connUrl').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      if (filter === 'cf') loadManifestModels('cf');
+      else if (filter === 'r2') loadManifestModels('r2');
+    }
+  });
+
+
   function modelCard(m) {
     const has = !!S.dl[m.id], act = S.active === m.id, prog = dlProg[m.id];
     let right;
@@ -467,9 +587,14 @@
       <div class="model-info"><strong>${esc(mname(m))}</strong><span>${m.meta} · ${fmtGB(m.gb)}</span></div>${right}</article>`;
   }
   function renderModels() {
-    const hub = filter === 'hub';
-    $('#hfBox').hidden = !hub; $('#hubList').hidden = !hub; $('#modelList').hidden = hub;
-    if (hub) { if (!hubLoaded) hfSearch(''); return; }
+    const remote = filter === 'hub' || filter === 'gh' || filter === 'cf' || filter === 'r2';
+    $('#hfBox').hidden = filter !== 'hub';
+    if ($('#connBox')) $('#connBox').hidden = !(filter === 'cf' || filter === 'r2');
+    $('#hubList').hidden = !remote; $('#modelList').hidden = remote;
+    if (filter === 'hub') { if (!hubLoaded) hfSearch(''); return; }
+    if (filter === 'gh') { loadGithubModels(); return; }
+    if (filter === 'cf') { loadManifestModels('cf'); return; }
+    if (filter === 'r2') { loadManifestModels('r2'); return; }
     let list = MODELS.slice();
     if (S.sort === 'size') list.sort((a, b) => a.gb - b.gb); else if (S.sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
     if (filter === 'dl') list = list.filter(m => S.dl[m.id]);
@@ -494,7 +619,8 @@
     const m = model(id);
     if (!NATIVE) return toast('Unduhan hanya tersedia di aplikasi Android');
     if (dlProg[id] != null || S.dl[id] || !m.url) return;
-    const did = NATIVE.startDownload(m.url, m.file, S.hfToken || '');
+    const tok = (m.url && m.url.includes('github') && S.ghToken) ? S.ghToken : (S.hfToken || '');
+    const did = NATIVE.startDownload(m.url, m.file, tok);
     if (did < 0) return toast('Nama file tidak valid');
     dlProg[id] = 0; renderModels(); toast('Mengunduh ' + m.short);
     let tries = 0;
@@ -617,6 +743,10 @@
     $('#v-ctx').textContent = S.ctx;
     $('#v-sys').textContent = S.sysPrompt ? (S.sysPrompt.length > 16 ? S.sysPrompt.slice(0, 16) + '…' : S.sysPrompt) : 'Kosong';
     $('#v-hf').textContent = S.hfToken ? 'Tersimpan' : 'Belum diatur';
+    const vgh = $('#v-gh'); if (vgh) vgh.textContent = S.ghRepo || 'v1-byte/Box-Ai';
+    const vght = $('#v-ght'); if (vght) vght.textContent = S.ghToken ? 'Tersimpan' : 'Opsional';
+    const vcf = $('#v-cf'); if (vcf) vcf.textContent = S.cfUrl ? S.cfUrl.slice(0, 28) + (S.cfUrl.length > 28 ? '…' : '') : 'Belum diatur';
+    const vr2 = $('#v-r2'); if (vr2) vr2.textContent = S.r2Url ? S.r2Url.slice(0, 28) + (S.r2Url.length > 28 ? '…' : '') : 'Belum diatur';
     const b = $('#v-onDevice'); b.textContent = S.onDevice ? 'ON' : 'OFF';
     b.style.color = S.onDevice ? '' : 'var(--bad)'; b.style.background = S.onDevice ? '' : 'rgba(255,93,108,.12)';
     $('#finderHint').textContent = MODELS.filter(m => S.dl[m.id]).length + ' model terunduh · ' + ROOT;
@@ -667,6 +797,34 @@
         <button class="btn primary" data-ok>Simpan</button>${S.hfToken ? '<button class="btn danger" data-v="rm" style="margin-top:8px">Hapus token</button>' : ''}<button class="btn ghost" data-close>Batal</button>`,
         (el, close) => { $('[data-ok]', el).addEventListener('click', () => close($('#hft', el).value.trim())); const r = $('[data-v=rm]', el); r && r.addEventListener('click', () => close('')); });
       if (v == null) return; S.hfToken = v; save(); renderSettings(); hubLoaded = false; toast(v ? 'Token disimpan' : 'Token dihapus');
+    },
+    async ghRepo() {
+      const v = await openSheet(`<h2>GitHub repo model</h2><p class="sub">Format owner/repo — Releases yang berisi aset .gguf akan ditampilkan di chip GitHub.</p>
+        <input class="field" id="ghr" autocomplete="off" placeholder="v1-byte/Box-Ai" value="${esc(S.ghRepo || 'v1-byte/Box-Ai')}" />
+        <button class="btn primary" data-ok>Simpan</button><button class="btn ghost" data-close>Batal</button>`,
+        (el, close) => { $('[data-ok]', el).addEventListener('click', () => close($('#ghr', el).value.trim())); });
+      if (v == null) return; S.ghRepo = v || 'v1-byte/Box-Ai'; save(); renderSettings(); connCache.gh = null; toast('Repo: ' + S.ghRepo);
+    },
+    async ghToken() {
+      const v = await openSheet(`<h2>GitHub token</h2><p class="sub">Opsional — untuk repo privat / rate limit. Hanya di perangkat ini.</p>
+        <input class="field" id="ght" type="password" autocomplete="off" placeholder="ghp_..." value="${esc(S.ghToken || '')}" />
+        <button class="btn primary" data-ok>Simpan</button>${S.ghToken ? '<button class="btn danger" data-v="rm" style="margin-top:8px">Hapus</button>' : ''}<button class="btn ghost" data-close>Batal</button>`,
+        (el, close) => { $('[data-ok]', el).addEventListener('click', () => close($('#ght', el).value.trim())); const r = $('[data-v=rm]', el); r && r.addEventListener('click', () => close('')); });
+      if (v == null) return; S.ghToken = v; save(); renderSettings(); connCache.gh = null; toast(v ? 'Token GitHub disimpan' : 'Token dihapus');
+    },
+    async cfUrl() {
+      const v = await openSheet(`<h2>Cloudflare Tunnel URL</h2><p class="sub">Base URL yang menyajikan <code>manifest.json</code> berisi daftar model.</p>
+        <input class="field" id="cfu" type="url" autocomplete="off" placeholder="https://xxx.trycloudflare.com" value="${esc(S.cfUrl || '')}" />
+        <button class="btn primary" data-ok>Simpan</button><button class="btn ghost" data-close>Batal</button>`,
+        (el, close) => { $('[data-ok]', el).addEventListener('click', () => close($('#cfu', el).value.trim())); });
+      if (v == null) return; S.cfUrl = v; save(); renderSettings(); connCache.cf = null; toast(v ? 'URL Cloudflare disimpan' : 'URL dikosongkan');
+    },
+    async r2Url() {
+      const v = await openSheet(`<h2>R2 / public URL</h2><p class="sub">URL publik bucket atau CDN dengan <code>manifest.json</code>.</p>
+        <input class="field" id="r2u" type="url" autocomplete="off" placeholder="https://pub-xxx.r2.dev" value="${esc(S.r2Url || '')}" />
+        <button class="btn primary" data-ok>Simpan</button><button class="btn ghost" data-close>Batal</button>`,
+        (el, close) => { $('[data-ok]', el).addEventListener('click', () => close($('#r2u', el).value.trim())); });
+      if (v == null) return; S.r2Url = v; save(); renderSettings(); connCache.r2 = null; toast(v ? 'URL R2 disimpan' : 'URL dikosongkan');
     },
     async talents() {
       const row = k => `<button class="opt ${S.talents[k] ? 'on' : ''}" data-v="${k}"><span class="o-txt">${k}<small>${esc(TALENTS[k].desc)}</small></span><i class="radio"></i></button>`;
