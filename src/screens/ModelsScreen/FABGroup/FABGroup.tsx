@@ -12,6 +12,7 @@ interface FABGroupProps {
   onAddHFModel: () => void;
   onAddLocalModel: () => void;
   onAddRemoteModel: () => void;
+  onScanDeviceModels?: () => void;
   onManageServers?: () => void;
   hasServers?: boolean;
 }
@@ -37,6 +38,7 @@ export const FABGroup: React.FC<FABGroupProps> = ({
   onAddHFModel,
   onAddLocalModel,
   onAddRemoteModel,
+  onScanDeviceModels,
   onManageServers,
   hasServers,
 }) => {
@@ -69,6 +71,20 @@ export const FABGroup: React.FC<FABGroupProps> = ({
           onAddLocalModel();
         },
       },
+      ...(onScanDeviceModels
+        ? [
+            {
+              testID: 'scan-device-fab',
+              icon: 'harddisk',
+              label: 'Terunduh — Scan semua',
+              accessibilityLabel: 'Scan semua model di perangkat',
+              style: styles.actionButton,
+              onPress: () => {
+                onScanDeviceModels();
+              },
+            },
+          ]
+        : []),
       {
         testID: 'remote-fab',
         icon: RemoteIcon,
@@ -98,6 +114,7 @@ export const FABGroup: React.FC<FABGroupProps> = ({
     onAddHFModel,
     onAddLocalModel,
     onAddRemoteModel,
+    onScanDeviceModels,
     onManageServers,
     hasServers,
     styles.actionButton,

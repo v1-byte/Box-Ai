@@ -377,14 +377,42 @@ class Bridge(
         return roots.filter { it.exists() && it.isDirectory }
     }
 
+    /** Quant tail without .gguf — e.g. q4_k_m. or q4_k_m */
+    private fun looksLikeTruncatedGguf(name: String): Boolean {
+        if (name.endsWith(".gguf", true)) return false
+        val n = name.lowercase()
+        if (n.endsWith(".")) return true
+        val quant = Regex("q[2-8](_[kms]+)?(_[ms])?$|iq[1-4]_[a-z0-9]+$|f16$|f32$|bf16$")
+        return quant.containsMatchIn(n)
+    }
+
+    /** Auto-fix `...q4_k_m.` → `...q4_k_m.gguf` when writable. */
+    private fun fixTruncatedGguf(f: File): File {
+        if (f.name.endsWith(".gguf", true)) return f
+        if (!looksLikeTruncatedGguf(f.name)) return f
+        var base = f.name.trimEnd('.')
+        if (!base.endsWith(".gguf", true)) base = "$base.gguf"
+        if (!safe(base)) return f
+        val dest = File(f.parentFile, base)
+        return try {
+            if (!dest.exists() && f.renameTo(dest)) dest else if (dest.exists()) dest else f
+        } catch (_: Exception) { f }
+    }
+
     private fun scanGguf(root: File, depth: Int, out: MutableList<File>, seen: MutableSet<String>) {
         if (depth < 0) return
         val list = try { root.listFiles() } catch (_: Exception) { null } ?: return
         for (f in list) {
             try {
-                if (f.isFile && f.name.endsWith(".gguf", true) && f.length() > 1024) {
-                    val key = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
-                    if (seen.add(key)) out.add(f)
+                if (f.isFile && f.length() > 1024) {
+                    val fixed = when {
+                        f.name.endsWith(".gguf", true) -> f
+                        looksLikeTruncatedGguf(f.name) -> fixTruncatedGguf(f)
+                        else -> null
+                    } ?: continue
+                    if (!fixed.name.endsWith(".gguf", true)) continue
+                    val key = try { fixed.canonicalPath } catch (_: Exception) { fixed.absolutePath }
+                    if (seen.add(key)) out.add(fixed)
                 } else if (f.isDirectory && !f.name.startsWith(".")) {
                     if (f.name.equals("cache", true) && depth < 2) continue
                     scanGguf(f, depth - 1, out, seen)

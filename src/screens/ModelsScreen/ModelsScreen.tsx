@@ -31,6 +31,7 @@ import {L10nContext} from '../../utils';
 import {Model, ModelOrigin} from '../../utils/types';
 import {ErrorState} from '../../utils/errors';
 import {ModelRecommendBanner} from '../../components/ModelRecommendBanner';
+import {scanAllAiModels} from '../../services/downloads';
 
 export const ModelsScreen: React.FC = observer(() => {
   const l10n = useContext(L10nContext);
@@ -180,6 +181,37 @@ export const ModelsScreen: React.FC = observer(() => {
   const handleCloseErrorReport = () => {
     setIsErrorReportVisible(false);
     setErrorToReport(null);
+  };
+
+  const handleScanDeviceModels = async () => {
+    try {
+      const found = await scanAllAiModels();
+      if (!found.length) {
+        Alert.alert(
+          'Tidak ada model',
+          'Tidak ditemukan file .gguf ≥50MB di Pocket AI, Download, /model ai/, atau folder app lain. Pastikan izin penyimpanan / All files aktif.',
+        );
+        return;
+      }
+      let added = 0;
+      for (const m of found) {
+        try {
+          await modelStore.addLocalModel(m.path);
+          added++;
+        } catch (e) {
+          // already registered or unreadable
+        }
+      }
+      Alert.alert(
+        'Scan selesai',
+        `${found.length} file ditemukan · ${added} ditambahkan ke Terunduh (dedupe otomatis).`,
+      );
+    } catch (e) {
+      Alert.alert(
+        'Scan gagal',
+        e instanceof Error ? e.message : String(e),
+      );
+    }
   };
 
   const handleAddLocalModel = async () => {
@@ -448,6 +480,7 @@ export const ModelsScreen: React.FC = observer(() => {
         onAddHFModel={() => setHFSearchVisible(true)}
         onAddLocalModel={handleAddLocalModel}
         onAddRemoteModel={handleAddRemoteModel}
+        onScanDeviceModels={handleScanDeviceModels}
         onManageServers={handleManageServers}
         hasServers={serverStore.servers.length > 0}
       />
