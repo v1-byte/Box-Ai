@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.17';
+  const APP_VERSION = '2.2.18';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -23,7 +23,7 @@
     temp: 0.7, topp: 0.9, maxTok: 2048, ctx: 4096,
     active: '', dl: {}, pal: null, pals: [],
     cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
-    chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', r2Url: '', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
+    chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', cfToken: '', r2Url: '', metaToken: '', ghPath: 'boxai/', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
@@ -288,6 +288,7 @@
     pushAi(md(out) + (srcs.length ? '<p class="muted-line">Sumber: ' + srcs.map((x, i) => '<a href="' + esc(x.url) + '">[' + (i + 1) + '] ' + esc(x.title.slice(0, 40)) + '</a>').join(' · ') + '</p>' : ''), out);
   }
   async function reply(text) {
+    if (await handleConnectorCommand(text)) return;
     let m;
     if ((m = text.match(/^\/calc\s+(.+)/i))) { try { return pushAi('<p>' + esc(m[1]) + ' = <strong>' + esc(runTalent('calculate', { expression: m[1] })) + '</strong></p>'); } catch (e) { return pushAi('<p>' + esc(e.message) + '</p>'); } }
     if (/^\/waktu/i.test(text)) { try { return pushAi('<p>' + esc(runTalent('datetime')) + '</p>'); } catch (e) { return pushAi('<p>' + esc(e.message) + '</p>'); } }
@@ -349,13 +350,181 @@
     S.cache.thumbs += Math.max(f.size / 1048576, 0.5); save();
   }
   fileInput.addEventListener('change', () => { if (fileInput.files[0]) setAttachment(fileInput.files[0]); });
+    async function openConnectorSheet() {
+    const v = await openSheet(
+      `<h2>Connector</h2>
+      <p class="sub">Token untuk GitHub / Cloudflare / Meta. Dipakai dari chat: <code>/gh</code>, <code>/cf</code>, <code>/connect</code>. Hanya tersimpan di perangkat.</p>
+      <label class="lbl">GitHub token (ghp_… / github_pat_…)<input class="field" id="cGh" type="password" autocomplete="off" value="${esc(S.ghToken || '')}" placeholder="github_pat_…" /></label>
+      <label class="lbl">GitHub repo (owner/name)<input class="field" id="cRepo" autocomplete="off" value="${esc(S.ghRepo || 'v1-byte/Box-Ai')}" placeholder="v1-byte/Box-Ai" /></label>
+      <label class="lbl">Path default di repo<input class="field" id="cPath" autocomplete="off" value="${esc(S.ghPath || 'boxai/')}" placeholder="boxai/" /></label>
+      <label class="lbl">Cloudflare tunnel / API URL<input class="field" id="cCf" type="url" autocomplete="off" value="${esc(S.cfUrl || '')}" placeholder="https://….trycloudflare.com" /></label>
+      <label class="lbl">Cloudflare API token (opsional)<input class="field" id="cCfTok" type="password" autocomplete="off" value="${esc(S.cfToken || '')}" placeholder="opsional" /></label>
+      <label class="lbl">Meta / HF token (opsional)<input class="field" id="cMeta" type="password" autocomplete="off" value="${esc(S.metaToken || S.hfToken || '')}" placeholder="hf_… atau token Meta" /></label>
+      <button class="btn primary" data-ok>Simpan</button>
+      <button class="btn ghost" data-v="testgh" style="margin-top:8px">Uji GitHub</button>
+      <button class="btn ghost" data-close>Batal</button>`,
+      (el, close) => {
+        $('[data-ok]', el).addEventListener('click', () => close({
+          gh: $('#cGh', el).value.trim(),
+          repo: $('#cRepo', el).value.trim(),
+          path: $('#cPath', el).value.trim(),
+          cf: $('#cCf', el).value.trim(),
+          cfTok: $('#cCfTok', el).value.trim(),
+          meta: $('#cMeta', el).value.trim(),
+          test: false
+        }));
+        const t = $('[data-v=testgh]', el);
+        t && t.addEventListener('click', () => close({
+          gh: $('#cGh', el).value.trim(),
+          repo: $('#cRepo', el).value.trim(),
+          path: $('#cPath', el).value.trim(),
+          cf: $('#cCf', el).value.trim(),
+          cfTok: $('#cCfTok', el).value.trim(),
+          meta: $('#cMeta', el).value.trim(),
+          test: true
+        }));
+      }
+    );
+    if (v == null) return;
+    S.ghToken = v.gh || '';
+    S.ghRepo = v.repo || 'v1-byte/Box-Ai';
+    S.ghPath = v.path || 'boxai/';
+    S.cfUrl = v.cf || '';
+    S.cfToken = v.cfTok || '';
+    if (v.meta) { S.metaToken = v.meta; if (v.meta.startsWith('hf_')) S.hfToken = v.meta; }
+    save();
+    renderSettings && renderSettings();
+    toast('Connector disimpan');
+    if (v.test) {
+      const r = await ghApi('GET', '/user');
+      if (r.ok) pushAi('<p>GitHub OK — login sebagai <strong>' + esc(r.data.login || '?') + '</strong>.</p>');
+      else pushAi('<p>GitHub gagal: ' + esc(r.error || String(r.status)) + '</p>');
+    }
+  }
+
+  async function ghApi(method, path, body) {
+    if (!S.ghToken) return { ok: false, error: 'Token GitHub kosong — buka + → Connector' };
+    try {
+      const r = await fetch('https://api.github.com' + path, {
+        method,
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: 'Bearer ' + S.ghToken,
+          'User-Agent': 'BoxAI-Connector',
+          'Content-Type': 'application/json'
+        },
+        body: body != null ? JSON.stringify(body) : undefined
+      });
+      const text = await r.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
+      if (!r.ok) return { ok: false, status: r.status, error: (data && (data.message || data.error)) || text.slice(0, 200) };
+      return { ok: true, data };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  function lastCodeFromChat() {
+    for (let i = S.chat.length - 1; i >= 0; i--) {
+      const m = S.chat[i];
+      const raw = m.raw || m.t || '';
+      const blocks = String(raw).match(/```[\s\S]*?```/g);
+      if (blocks && blocks.length) {
+        const b = blocks[blocks.length - 1];
+        const inner = b.replace(/^```[a-z0-9]*\n?/i, '').replace(/```$/, '');
+        return inner;
+      }
+      if (m.r === 'user' && m.t && m.t.length > 40 && /[{};=]|function |class |import /.test(m.t)) return m.t;
+    }
+    return '';
+  }
+
+  async function handleConnectorCommand(text) {
+    const t = text.trim();
+    if (/^\/connect\b/i.test(t)) { await openConnectorSheet(); return true; }
+    if (/^\/gh\s+status\b/i.test(t) || /^\/gh\s*$/i.test(t)) {
+      const r = await ghApi('GET', '/user');
+      if (!r.ok) { pushAi('<p>GitHub: ' + esc(r.error) + '</p>'); return true; }
+      pushAi('<p><strong>GitHub</strong> · @' + esc(r.data.login) + '<br>Repo: <code>' + esc(S.ghRepo || '-') + '</code><br>Path: <code>' + esc(S.ghPath || 'boxai/') + '</code></p>');
+      return true;
+    }
+    if (/^\/gh\s+gist\b/i.test(t)) {
+      const code = lastCodeFromChat();
+      if (!code) { pushAi('<p>Tidak ada blok kode di chat untuk di-gist. Minta model tulis kode dulu, atau tempel kode lalu <code>/gh gist</code>.</p>'); return true; }
+      const name = (t.replace(/^\/gh\s+gist\s*/i, '').trim() || 'boxai-snippet.txt');
+      const r = await ghApi('POST', '/gists', {
+        description: 'Box AI gist',
+        public: false,
+        files: { [name]: { content: code } }
+      });
+      if (!r.ok) { pushAi('<p>Gist gagal: ' + esc(r.error) + '</p>'); return true; }
+      pushAi('<p>Gist dibuat: <a href="' + esc(r.data.html_url) + '">' + esc(r.data.html_url) + '</a></p>');
+      return true;
+    }
+    if (/^\/gh\s+push\b/i.test(t)) {
+      const rest = t.replace(/^\/gh\s+push\s*/i, '').trim();
+      let path = rest.split(/\s+/)[0] || '';
+      let code = lastCodeFromChat();
+      if (!path || path === 'push') {
+        path = (S.ghPath || 'boxai/') + 'snippet-' + Date.now() + '.txt';
+      } else if (!code && rest.indexOf('\n') > -1) {
+        code = rest.slice(rest.indexOf('\n') + 1);
+      }
+      if (!code) { pushAi('<p>Tidak ada konten untuk di-push. Sediakan blok kode di chat, lalu <code>/gh push path/file.ext</code>.</p>'); return true; }
+      const repo = S.ghRepo || 'v1-byte/Box-Ai';
+      const [owner, name] = repo.split('/');
+      if (!owner || !name) { pushAi('<p>Repo tidak valid. Set di + → Connector.</p>'); return true; }
+      path = path.replace(/^\//, '');
+      // get sha if exists
+      let sha;
+      const existing = await ghApi('GET', '/repos/' + owner + '/' + name + '/contents/' + path);
+      if (existing.ok && existing.data && existing.data.sha) sha = existing.data.sha;
+      const body = {
+        message: 'chore(boxai): update ' + path,
+        content: btoa(unescape(encodeURIComponent(code))),
+        branch: 'main'
+      };
+      if (sha) body.sha = sha;
+      const r = await ghApi('PUT', '/repos/' + owner + '/' + name + '/contents/' + path, body);
+      if (!r.ok) { pushAi('<p>Push gagal: ' + esc(r.error) + '</p>'); return true; }
+      const url = (r.data && r.data.content && r.data.content.html_url) || ('https://github.com/' + repo + '/blob/main/' + path);
+      pushAi('<p>Push OK → <a href="' + esc(url) + '"><code>' + esc(path) + '</code></a></p>');
+      return true;
+    }
+    if (/^\/gh\s+issue\b/i.test(t)) {
+      const title = t.replace(/^\/gh\s+issue\s*/i, '').trim() || 'Issue dari Box AI';
+      const repo = S.ghRepo || 'v1-byte/Box-Ai';
+      const [owner, name] = repo.split('/');
+      const body = lastCodeFromChat() || 'Dilaporkan dari Box AI chat.';
+      const r = await ghApi('POST', '/repos/' + owner + '/' + name + '/issues', { title, body });
+      if (!r.ok) { pushAi('<p>Issue gagal: ' + esc(r.error) + '</p>'); return true; }
+      pushAi('<p>Issue #' + esc(String(r.data.number)) + ': <a href="' + esc(r.data.html_url) + '">' + esc(r.data.title) + '</a></p>');
+      return true;
+    }
+    if (/^\/cf\s+status\b/i.test(t) || /^\/cf\s*$/i.test(t)) {
+      if (!S.cfUrl) { pushAi('<p>Cloudflare URL kosong — + → Connector.</p>'); return true; }
+      try {
+        const base = S.cfUrl.replace(/\/$/, '');
+        const r = await fetch(base + '/manifest.json', { method: 'GET' });
+        pushAi('<p>Cloudflare <code>' + esc(base) + '</code> → HTTP ' + r.status + (r.ok ? ' (manifest OK)' : '') + '</p>');
+      } catch (e) {
+        pushAi('<p>Cloudflare gagal: ' + esc(e.message) + '</p>');
+      }
+      return true;
+    }
+    return false;
+  }
+
   $('#btnAttach').addEventListener('click', async () => {
-    const v = await openSheet(`<h2>Lampirkan</h2><div style="height:6px"></div>
-      <button class="opt" data-v="image">${ic('image')}<span class="o-txt">Foto dari galeri<small>JPG, PNG, WebP</small></span></button>
-      <button class="opt" data-v="camera">${ic('camera')}<span class="o-txt">Kamera<small>Ambil foto langsung</small></span></button>
-      <button class="opt" data-v="file">${ic('file')}<span class="o-txt">File atau dokumen<small>PDF, TXT, dan lainnya</small></span></button>`,
+    const v = await openSheet(`<h2>Lampirkan & Connector</h2><div style="height:6px"></div>
+      <button class="opt" data-v="conn"><span class="o-txt">Connector<small>Token GitHub · Cloudflare · Meta · push/gist</small></span></button>
+      <button class="opt" data-v="photo"><span class="o-txt">Foto / galeri<small>Gambar untuk dibahas di chat</small></span></button>
+      <button class="opt" data-v="camera"><span class="o-txt">Kamera<small>Ambil foto baru</small></span></button>
+      <button class="opt" data-v="file"><span class="o-txt">File<small>PDF, TXT, dan lainnya</small></span></button>`,
       (el, close) => $$('.opt', el).forEach(b => b.addEventListener('click', () => close(b.dataset.v))));
     if (!v) return;
+    if (v === 'conn') { await openConnectorSheet(); return; }
     fileInput.accept = v === 'file' ? '' : 'image/*';
     if (v === 'camera') fileInput.setAttribute('capture', 'environment'); else fileInput.removeAttribute('capture');
     fileInput.click();
