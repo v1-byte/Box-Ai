@@ -56,6 +56,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: BoxAI-v2.2.3-apk
+          name: BoxAI-v2.2.4-apk
           path: BoxAI-Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
