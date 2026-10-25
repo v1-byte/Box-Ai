@@ -47,15 +47,23 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Assemble debug APK
+      - name: Assemble release APK
         working-directory: BoxAI-Android
         run: |
           echo "sdk.dir=$HOME/android-sdk" > local.properties
-          gradle assembleDebug --stacktrace
+          gradle assembleRelease --stacktrace
 
-      - name: Upload APK
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: BoxAI-v2.2.9-apk
-          path: BoxAI-Android/app/build/outputs/apk/debug/app-debug.apk
+          path: BoxAI-Android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      - name: Publish to GitHub Release (on tag/workflow_dispatch with tag)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: BoxAI-Android/app/build/outputs/apk/release/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

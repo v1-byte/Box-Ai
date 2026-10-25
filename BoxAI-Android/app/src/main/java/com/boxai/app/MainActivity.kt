@@ -165,6 +165,14 @@ class Bridge(
     private val dm get() = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun dir(): File = (ctx.getExternalFilesDir("models") ?: File(ctx.filesDir, "models")).also { it.mkdirs() }
 
+    /** Sanitize model/file names: block path traversal and odd characters. */
+    private fun safe(name: String): Boolean {
+        if (name.isBlank()) return false
+        if (name.contains("..")) return false
+        if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0) return false
+        return name.matches(Regex("^[A-Za-z0-9._()\\[\\]+\\- ]{1,255}$"))
+    }
+
     /** Semua folder yang mungkin berisi GGUF (app sendiri + lokasi umum). */
     private fun modelScanRoots(): List<File> {
         val roots = LinkedHashSet<File>()
