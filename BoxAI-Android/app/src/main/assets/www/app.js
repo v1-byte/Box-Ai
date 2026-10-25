@@ -5,6 +5,8 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
+  const APP_VERSION = '2.2.2';
+  const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   /* ================= DATA & STATE ================= */
@@ -591,6 +593,8 @@
     b.style.color = S.onDevice ? '' : 'var(--bad)'; b.style.background = S.onDevice ? '' : 'rgba(255,93,108,.12)';
     $('#finderHint').textContent = MODELS.filter(m => S.dl[m.id]).length + ' model terunduh · ' + ROOT;
     $('#cleanHint').textContent = cleanableSafe() > 1 ? fmtMB(cleanableSafe()) + ' cache bisa dibersihkan' : 'Penyimpanan sudah bersih';
+    const verEl = document.getElementById('v-appVer');
+    if (verEl) verEl.textContent = APP_VERSION;
   }
   $('#swHaptics').addEventListener('change', e => { S.haptics = e.target.checked; save(); if (S.haptics && navigator.vibrate) navigator.vibrate(15); toast(S.haptics ? 'Haptics aktif' : 'Haptics mati'); });
   $('#goClean').addEventListener('click', () => { prevScreen = 'settings'; go('clean'); });
@@ -660,7 +664,42 @@
         <p><b>Model</b><br>Gemma: Gemma Terms of Use. Llama 3.2: Llama Community License. Phi-3: MIT. Mistral Nemo dan Qwen2.5: Apache 2.0.</p></div>
         <button class="btn ghost" data-close>Tutup</button>`);
     },
-    version() { toast('Box AI 2.0.0 adalah versi terbaru'); }
+    async version() {
+      toast('Memeriksa update…');
+      try {
+        const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        const tag = (data.tag_name || '').replace(/^v/i, '');
+        const asset = (data.assets || []).find(a => /\.apk$/i.test(a.name));
+        const url = asset ? asset.browser_download_url : (data.html_url || '');
+        const cmp = (a, b) => {
+          const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+          for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+            const x = pa[i] || 0, y = pb[i] || 0;
+            if (x !== y) return x - y;
+          }
+          return 0;
+        };
+        if (tag && cmp(tag, APP_VERSION) > 0) {
+          const go = await confirmBox(
+            'Update tersedia: v' + tag,
+            'Versi kamu: ' + APP_VERSION + '. Versi baru memperbaiki UI dan deteksi model. Unduh APK lalu install (izinkan sumber tidak dikenal).',
+            'Unduh update',
+            false
+          );
+          if (go && url) {
+            if (NATIVE && NATIVE.openUrl) NATIVE.openUrl(url);
+            else window.open(url, '_blank');
+            toast('Membuka unduhan APK…');
+          }
+        } else {
+          toast('Box AI ' + APP_VERSION + ' sudah versi terbaru');
+        }
+      } catch (e) {
+        toast('Gagal cek update: ' + (e.message || 'offline'));
+      }
+    }
   };
   $$('[data-set]').forEach(el => el.addEventListener('click', () => ACTIONS[el.dataset.set] && ACTIONS[el.dataset.set]()));
 
@@ -1149,6 +1188,44 @@
   })();
 
   /* ================= INIT ================= */
+
+  /* ---- Auto-update check (sekali / 24 jam) ---- */
+  async function checkUpdateSilent() {
+    try {
+      const key = 'box_last_update_check';
+      const last = +(localStorage.getItem(key) || 0);
+      if (Date.now() - last < 24 * 3600 * 1000) return;
+      localStorage.setItem(key, String(Date.now()));
+      const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) return;
+      const data = await r.json();
+      const tag = (data.tag_name || '').replace(/^v/i, '');
+      const cmp = (a, b) => {
+        const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const x = pa[i] || 0, y = pb[i] || 0;
+          if (x !== y) return x - y;
+        }
+        return 0;
+      };
+      if (tag && cmp(tag, APP_VERSION) > 0) {
+        const asset = (data.assets || []).find(a => /\.apk$/i.test(a.name));
+        const url = asset ? asset.browser_download_url : data.html_url;
+        const go = await confirmBox(
+          'Update Box AI v' + tag,
+          'Versi baru tersedia (kamu: ' + APP_VERSION + '). Disarankan update untuk perbaikan UI & model.',
+          'Unduh',
+          false
+        );
+        if (go && url) {
+          if (NATIVE && NATIVE.openUrl) NATIVE.openUrl(url);
+          else window.open(url, '_blank');
+        }
+      }
+    } catch (e) { /* offline — diam */ }
+  }
+  setTimeout(checkUpdateSilent, 2500);
+
   syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); updateTop(); } });
   // Refresh daftar model tiap kali buka tab Models

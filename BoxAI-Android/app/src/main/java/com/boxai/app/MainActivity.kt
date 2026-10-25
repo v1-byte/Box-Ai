@@ -433,6 +433,15 @@ class Bridge(
     /** Path absolut folder models (debug / pencari). */
     @JavascriptInterface fun modelsPath(): String = dir().absolutePath
 
+    /** Buka URL di browser eksternal (update APK, tautan, dll). */
+    @JavascriptInterface fun openUrl(url: String) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(i)
+        } catch (_: Exception) { }
+    }
+
     @JavascriptInterface fun info(): String {
         val mi = ActivityManager.MemoryInfo()
         (ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
