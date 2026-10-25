@@ -369,20 +369,19 @@ class Bridge(
     }
 
     @JavascriptInterface fun listModels(): String {
+        // Fast path for boot — only app models folder + completed downloads.
+        // Heavy multi-folder scan is listModelsDeep() (Models tab / after permission).
+        val d = dir()
         val busy = busyNames()
         val seen = HashSet<String>()
-        val files = mutableListOf<File>()
+        val a = JSONArray()
 
-        for (root in modelScanRoots()) {
-            val depth = when {
-                root.absolutePath.contains("Android/data") -> 3
-                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 2
-                else -> 3
+        d.listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) && it.length() > 1024 }?.forEach { f ->
+            if (f.name !in busy && seen.add(f.name)) {
+                a.put(JSONObject().put("name", f.name).put("size", f.length()).put("mod", f.lastModified()).put("path", f.absolutePath))
             }
-            scanGguf(root, depth, files, seen)
         }
 
-        // Unduhan sukses DownloadManager → pastikan ada di folder app
         try {
             dm.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL)).use { c ->
                 val uriIdx = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
@@ -394,8 +393,8 @@ class Bridge(
                         title.endsWith(".gguf", true) -> title
                         else -> Uri.parse(local).lastPathSegment ?: ""
                     }
-                    if (!name.endsWith(".gguf", true) || !safe(name)) continue
-                    val dest = File(dir(), name)
+                    if (!name.endsWith(".gguf", true) || !safe(name) || name in seen) continue
+                    val dest = File(d, name)
                     if (!dest.exists() || dest.length() < 1024) {
                         try {
                             val srcUri = Uri.parse(local)
@@ -404,24 +403,33 @@ class Bridge(
                             }
                         } catch (_: Exception) { }
                     }
-                    if (dest.exists() && dest.length() > 1024) {
-                        val key = try { dest.canonicalPath } catch (_: Exception) { dest.absolutePath }
-                        if (seen.add(key)) files.add(dest)
+                    if (dest.exists() && dest.length() > 1024 && seen.add(name)) {
+                        a.put(JSONObject().put("name", name).put("size", dest.length()).put("mod", dest.lastModified()).put("path", dest.absolutePath))
                     }
                 }
             }
         } catch (_: Exception) { }
 
+        return a.toString()
+    }
+
+    /** Slow wide scan (Download / shared folders). Call after splash, not on cold start. */
+    @JavascriptInterface fun listModelsDeep(): String {
+        val busy = busyNames()
+        val seen = HashSet<String>()
+        val files = mutableListOf<File>()
+        for (root in modelScanRoots()) {
+            val depth = when {
+                root.absolutePath.contains("Android/data") -> 2
+                root.name.equals("Download", true) || root.name.equals("Downloads", true) -> 1
+                else -> 2
+            }
+            scanGguf(root, depth, files, seen)
+        }
         val a = JSONArray()
         files.sortedByDescending { it.lastModified() }.forEach { f ->
             if (f.name in busy) return@forEach
-            a.put(
-                JSONObject()
-                    .put("name", f.name)
-                    .put("size", f.length())
-                    .put("mod", f.lastModified())
-                    .put("path", f.absolutePath)
-            )
+            a.put(JSONObject().put("name", f.name).put("size", f.length()).put("mod", f.lastModified()).put("path", f.absolutePath))
         }
         return a.toString()
     }

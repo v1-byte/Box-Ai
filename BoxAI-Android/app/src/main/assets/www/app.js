@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.9';
+  const APP_VERSION = '2.2.12';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -161,12 +161,22 @@
 
   /* ================= SPLASH ================= */
   const splash = $('#splash'), bar = $('#bootBar'), bootText = $('#bootText');
-  [[25, 'Menyiapkan mesin on-device'], [60, 'Memeriksa model lokal'], [90, 'Hampir siap'], [100, 'Siap']]
-    .forEach(([w, t], i) => setTimeout(() => { bar.style.width = w + '%'; bootText.textContent = t; }, 1300 + i * 380));
-  setTimeout(() => {
-    splash.classList.add('out'); setTimeout(() => splash.remove(), 700);
-    const m = $('#messages'); m.scrollTop = m.scrollHeight;
-  }, 3100);
+  function finishSplash() {
+    try {
+      if (!splash || !splash.parentNode) return;
+      splash.classList.add('out');
+      setTimeout(() => { try { splash.remove(); } catch (e) {} }, 500);
+      const m = $('#messages'); if (m) m.scrollTop = m.scrollHeight;
+    } catch (e) {}
+  }
+  // Progress labels (cosmetic only) — splash MUST end even if native is slow
+  [[30, 'Menyiapkan mesin on-device'], [55, 'Memeriksa model lokal'], [80, 'Hampir siap'], [100, 'Siap']]
+    .forEach(([w, t], i) => setTimeout(() => {
+      try { if (bar) bar.style.width = w + '%'; if (bootText) bootText.textContent = t; } catch (e) {}
+    }, 400 + i * 350));
+  setTimeout(finishSplash, 1800);
+  // Hard fallback if something blocks earlier timers
+  setTimeout(finishSplash, 4000);
 
   /* ================= CHAT ================= */
   const messages = $('#messages'), input = $('#composerInput'), sendBtn = $('#btnSend');
@@ -1312,7 +1322,11 @@
     } catch (e) {}
   }, 3500);
 
-  syncLocal(); applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
+  // Jangan panggil listModels (native) sebelum splash hilang — scan bisa memblokir WebView
+  applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
+  setTimeout(() => {
+    try { syncLocal(); renderModels(); renderSettings(); updateTop(); } catch (e) {}
+  }, 2200);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { syncLocal(); renderModels(); renderSettings(); updateTop(); } });
   // Refresh daftar model tiap kali buka tab Models
   const _go = typeof go === 'function' ? go : null;
