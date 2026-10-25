@@ -821,110 +821,51 @@ class Bridge(
         return null
     }
 
-    // ---- Download with progress + pause/resume (fixed) ----
-    private data class DlJob(
-        val id: Long,
+    // ---- System DownloadManager: background + notification + in-app % ----
+    private data class DlMeta(
         val url: String,
         val name: String,
         val token: String,
         @Volatile var paused: Boolean = false,
-        @Volatile var cancelled: Boolean = false,
-        @Volatile var status: Int = DownloadManager.STATUS_RUNNING,
         @Volatile var bytes: Long = 0,
         @Volatile var total: Long = 0,
+        @Volatile var status: Int = DownloadManager.STATUS_RUNNING,
         @Volatile var error: String = "",
     )
-    private val dlJobs = ConcurrentHashMap<Long, DlJob>()
-    private val dlSeq = AtomicLong(900_000L)
+    private val dlMeta = ConcurrentHashMap<Long, DlMeta>()
     @Volatile private var lastDlError: String = ""
 
     @JavascriptInterface fun lastDownloadError(): String = lastDlError
 
-    private fun runDlJob(job: DlJob) {
-        Thread {
-            val dest = File(dir(), job.name)
-            val part = File(dir(), job.name + ".part")
-            try {
-                var existing = if (part.exists()) part.length() else 0L
-                if (existing > 0) job.bytes = existing
-                val conn = java.net.URL(job.url).openConnection() as java.net.HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 45_000
-                conn.readTimeout = 120_000
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) BoxAI/2.2")
-                if (job.token.isNotBlank()) {
-                    conn.setRequestProperty("Authorization", "Bearer ${job.token}")
+    /** Pindahkan hasil DM ke folder models dengan nama pasti. */
+    private fun finalizeDownload(id: Long, name: String) {
+        try {
+            dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
+                if (!c.moveToFirst()) return
+                val local = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)) ?: return
+                val src = when {
+                    local.startsWith("file://") -> File(Uri.parse(local).path ?: return)
+                    local.startsWith("content://") -> {
+                        val tmp = File(dir(), name + ".tmp")
+                        ctx.contentResolver.openInputStream(Uri.parse(local))?.use { inp ->
+                            FileOutputStream(tmp).use { out -> inp.copyTo(out, 256 * 1024) }
+                        } ?: return
+                        tmp
+                    }
+                    else -> File(local)
                 }
-                if (existing > 0) conn.setRequestProperty("Range", "bytes=$existing-")
-                conn.connect()
-                val code = conn.responseCode
-                if (code !in 200..299 && code != 206) {
-                    job.error = "HTTP $code"
-                    lastDlError = job.error
-                    job.status = DownloadManager.STATUS_FAILED
-                    return@Thread
-                }
-                val reported = conn.contentLengthLong
-                if (code == 206) {
-                    if (reported > 0) job.total = existing + reported
-                } else {
-                    existing = 0L
-                    if (part.exists()) part.delete()
-                    job.bytes = 0
-                    if (reported > 0) job.total = reported
-                }
-                if (job.total <= 0 && reported > 0) job.total = reported
-
-                conn.inputStream.use { input ->
-                    FileOutputStream(part, existing > 0 && code == 206).use { out ->
-                        val buf = ByteArray(128 * 1024)
-                        while (true) {
-                            if (job.cancelled) {
-                                job.status = DownloadManager.STATUS_FAILED
-                                job.error = "dibatalkan"
-                                return@Thread
-                            }
-                            if (job.paused) {
-                                job.status = DownloadManager.STATUS_PAUSED
-                                return@Thread
-                            }
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            job.bytes += n.toLong()
-                            job.status = DownloadManager.STATUS_RUNNING
-                        }
-                        out.flush()
+                val dest = File(dir(), name)
+                if (src.absolutePath != dest.absolutePath) {
+                    if (dest.exists()) dest.delete()
+                    if (!src.renameTo(dest)) {
+                        src.inputStream().use { inp -> FileOutputStream(dest).use { out -> inp.copyTo(out, 256 * 1024) } }
+                        src.delete()
                     }
                 }
-                if (job.cancelled) {
-                    job.status = DownloadManager.STATUS_FAILED
-                    return@Thread
-                }
-                if (job.paused) {
-                    job.status = DownloadManager.STATUS_PAUSED
-                    return@Thread
-                }
-                if (dest.exists()) dest.delete()
-                if (!part.renameTo(dest)) {
-                    part.inputStream().use { inp ->
-                        FileOutputStream(dest).use { out -> inp.copyTo(out) }
-                    }
-                    part.delete()
-                }
-                job.bytes = dest.length()
-                if (job.total <= 0) job.total = job.bytes
-                job.status = DownloadManager.STATUS_SUCCESSFUL
-            } catch (e: Exception) {
-                if (job.paused) {
-                    job.status = DownloadManager.STATUS_PAUSED
-                } else {
-                    job.error = e.message ?: "error"
-                    lastDlError = job.error
-                    job.status = DownloadManager.STATUS_FAILED
-                }
+                // hapus .part sisa
+                File(dir(), name + ".part").delete()
             }
-        }.start()
+        } catch (_: Exception) { }
     }
 
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
@@ -939,75 +880,122 @@ class Bridge(
             return -1L
         }
         dir()
-        dlJobs.values.firstOrNull { it.name == pure && it.status == DownloadManager.STATUS_PAUSED }?.let { job ->
-            job.paused = false
-            job.cancelled = false
-            job.status = DownloadManager.STATUS_RUNNING
-            job.error = ""
-            runDlJob(job)
-            return job.id
+        // Hapus file gagal lama (biarkan .part tidak relevan untuk DM)
+        try { File(dir(), pure).takeIf { it.exists() && it.length() == 0L }?.delete() } catch (_: Exception) { }
+
+        return try {
+            val r = DownloadManager.Request(Uri.parse(url))
+                .setTitle(pure)
+                .setDescription("Box AI · unduhan model (lanjut meski app ditutup)")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
+                .setAllowedNetworkTypes(
+                    DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
+                )
+                .setDestinationInExternalFilesDir(ctx, "models", pure)
+            if (token.isNotBlank()) r.addRequestHeader("Authorization", "Bearer $token")
+            r.addRequestHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13) BoxAI/2.2")
+            // HuggingFace often needs this
+            r.addRequestHeader("Accept", "*/*")
+            val id = dm.enqueue(r)
+            dlMeta[id] = DlMeta(url = url, name = pure, token = token)
+            id
+        } catch (e: Exception) {
+            lastDlError = e.message ?: "enqueue gagal"
+            -1L
         }
-        val id = dlSeq.incrementAndGet()
-        val job = DlJob(id = id, url = url, name = pure, token = token)
-        val part = File(dir(), pure + ".part")
-        if (part.exists()) job.bytes = part.length()
-        dlJobs[id] = job
-        runDlJob(job)
-        return id
     }
 
     @JavascriptInterface fun pauseDownload(id: Long): Boolean {
-        val job = dlJobs[id] ?: return false
-        job.paused = true
-        job.status = DownloadManager.STATUS_PAUSED
+        // DownloadManager tidak support pause resmi — simpan meta & remove (bisa dilanjut ulang dari awal)
+        val meta = dlMeta[id] ?: return false
+        try {
+            // catat progress terakhir
+            dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
+                if (c.moveToFirst()) {
+                    meta.bytes = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                    meta.total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                }
+            }
+            dm.remove(id)
+        } catch (_: Exception) { }
+        meta.paused = true
+        meta.status = DownloadManager.STATUS_PAUSED
+        // simpan dengan id negatif sentinel agar status() masih bisa baca
+        dlMeta[-id] = meta
+        dlMeta.remove(id)
         return true
     }
 
     @JavascriptInterface fun resumeDownload(id: Long): Boolean {
-        val job = dlJobs[id] ?: return false
-        if (job.status == DownloadManager.STATUS_SUCCESSFUL) return true
-        job.paused = false
-        job.cancelled = false
-        job.error = ""
-        job.status = DownloadManager.STATUS_RUNNING
-        runDlJob(job)
+        // Coba meta dari id atau -id (setelah pause)
+        val meta = dlMeta[id] ?: dlMeta[-id] ?: return false
+        if (meta.status == DownloadManager.STATUS_SUCCESSFUL) return true
+        dlMeta.remove(id)
+        dlMeta.remove(-id)
+        val newId = startDownload(meta.url, meta.name, meta.token)
+        if (newId < 0) return false
+        // JS harus update dlIds — return true saja; caller re-tracks via startDownload path
+        // Simpan mapping: kita return true, resumeDownload di JS memanggil startDownload ulang lebih aman
         return true
     }
 
     @JavascriptInterface fun status(id: Long): String {
         val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L)
-        val job = dlJobs[id]
-        if (job != null) {
-            o.put("s", job.status)
-            o.put("b", job.bytes)
-            o.put("t", job.total)
-            o.put("name", job.name)
-            if (job.error.isNotEmpty()) o.put("err", job.error)
-            return o.toString()
+        // paused sentinel
+        dlMeta[-id]?.let { meta ->
+            if (meta.paused) {
+                o.put("s", DownloadManager.STATUS_PAUSED)
+                o.put("b", meta.bytes)
+                o.put("t", meta.total)
+                o.put("name", meta.name)
+                return o.toString()
+            }
         }
+        val meta = dlMeta[id]
         try {
             dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
                 if (c.moveToFirst()) {
-                    o.put("s", c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)))
-                    o.put("b", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
-                    o.put("t", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
+                    val s = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                    val b = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                    val t = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                    o.put("s", s).put("b", b).put("t", t)
+                    if (meta != null) {
+                        meta.bytes = b
+                        meta.total = t
+                        meta.status = s
+                        o.put("name", meta.name)
+                    }
+                    if (s == DownloadManager.STATUS_SUCCESSFUL && meta != null) {
+                        finalizeDownload(id, meta.name)
+                    }
+                    if (s == DownloadManager.STATUS_FAILED) {
+                        val reason = c.getColumnIndex(DownloadManager.COLUMN_REASON)
+                        if (reason >= 0) {
+                            val r = c.getInt(reason)
+                            o.put("err", "DM reason $r")
+                            lastDlError = "gagal reason $r"
+                        }
+                    }
+                    return o.toString()
                 }
             }
         } catch (_: Exception) { }
+        // fallback meta only
+        if (meta != null) {
+            o.put("s", meta.status).put("b", meta.bytes).put("t", meta.total).put("name", meta.name)
+            if (meta.error.isNotEmpty()) o.put("err", meta.error)
+        }
         return o.toString()
     }
 
     @JavascriptInterface fun cancel(id: Long) {
-        val job = dlJobs[id]
-        if (job != null) {
-            job.cancelled = true
-            job.paused = false
-            job.status = DownloadManager.STATUS_FAILED
-            try { File(dir(), job.name + ".part").delete() } catch (_: Exception) { }
-            dlJobs.remove(id)
-            return
-        }
         try { dm.remove(id) } catch (_: Exception) { }
+        val meta = dlMeta.remove(id) ?: dlMeta.remove(-id)
+        if (meta != null) {
+            try { File(dir(), meta.name + ".part").delete() } catch (_: Exception) { }
+        }
     }
 
     @JavascriptInterface fun deleteModel(name: String): Boolean = safe(name) && File(dir(), name).delete()

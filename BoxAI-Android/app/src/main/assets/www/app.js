@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.23';
+  const APP_VERSION = '2.2.24';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -931,7 +931,7 @@
     dlState[id] = 'run';
     renderDlPanel();
     renderModels();
-    toast('Memulai unduhan ' + (m.short || fileName) + '…');
+    toast('Mengunduh ' + (m.short || fileName) + ' — tetap jalan jika keluar app');
     let did = -1;
     try {
       did = NATIVE.startDownload(m.url, fileName, tok);
@@ -958,18 +958,14 @@
     renderDlPanel(); renderModels(); toast('Unduhan dijeda');
   }
   function resumeDownload(id) {
-    const did = dlIds[id];
     const m = model(id);
     if (!NATIVE) return;
-    if (did != null && NATIVE.resumeDownload) {
-      NATIVE.resumeDownload(did);
-      dlState[id] = 'run';
-      renderDlPanel(); renderModels(); toast('Melanjutkan unduhan');
-      trackDownload(id, did);
-      return;
-    }
-    // fallback restart
-    if (m.url) startDownload(id);
+    // DownloadManager: lanjut = enqueue ulang (sistem background)
+    delete dlProg[id]; delete dlIds[id]; delete dlState[id];
+    if (m && m.url) {
+      toast('Melanjutkan unduhan di background…');
+      startDownload(id);
+    } else toast('URL model hilang — pilih unduh ulang dari Hub');
   }
   function cancelDownload(id) {
     const did = dlIds[id];
