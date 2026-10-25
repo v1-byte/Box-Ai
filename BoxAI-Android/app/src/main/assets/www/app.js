@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.19';
+  const APP_VERSION = '2.2.20';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -532,7 +532,7 @@
 
   /* ================= MODELS ================= */
   let filter = 'all';
-  const dlProg = {};
+  const dlProg = {}; const dlIds = {}; const dlState = {}; // run|pause|done
   const QRE = /(IQ\d_[A-Z0-9_]+|Q\d_[A-Z0-9_]+|BF16|F16|F32)/i;
   const modelId = f => 'm_' + f.replace(/[^a-z0-9]/gi, '_');
   const fmtN = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' jt' : n >= 1e3 ? Math.round(n / 1e3) + ' rb' : String(n || 0);
@@ -747,13 +747,33 @@
 
   function modelCard(m) {
     const has = !!S.dl[m.id], act = S.active === m.id, prog = dlProg[m.id];
-    let right;
-    if (act) right = '<span class="tag ok"><i></i>Aktif</span>';
-    else if (has) right = '<button type="button" class="btn-use" data-act="use">Pakai</button>';
-    else right = `<button type="button" class="btn-dl ${prog != null ? 'loading' : ''}" style="--p:${prog || 0}" data-act="dl" aria-label="Unduh">${ic('down')}<em></em></button>`;
-    return `<article class="model-card ${act ? 'installed' : ''}" data-id="${m.id}">
+    const st = dlState[m.id] || (prog != null ? 'run' : '');
+    let right = '';
+    let bar = '';
+    if (act) {
+      right = '<span class="tag ok"><i></i>Aktif</span>';
+    } else if (has) {
+      right = '<button type="button" class="btn-use" data-act="use" title="Gunakan model ini">Gunakan</button>';
+    } else if (st === 'run' || (prog != null && st !== 'pause')) {
+      const p = Math.max(0, Math.min(100, Math.round(prog || 0)));
+      bar = `<div class="dl-bar"><i style="width:${p}%"></i><span>${p}%</span></div>`;
+      right = `<div class="dl-actions">
+        <button type="button" class="btn-dl-ctrl" data-act="pause" title="Jeda">⏸</button>
+        <button type="button" class="btn-dl-ctrl danger" data-act="cancel" title="Batal">✕</button>
+      </div>`;
+    } else if (st === 'pause') {
+      const p = Math.max(0, Math.min(100, Math.round(prog || 0)));
+      bar = `<div class="dl-bar paused"><i style="width:${p}%"></i><span>${p}% · jeda</span></div>`;
+      right = `<div class="dl-actions">
+        <button type="button" class="btn-dl-ctrl play" data-act="resume" title="Lanjutkan">▶</button>
+        <button type="button" class="btn-dl-ctrl danger" data-act="cancel" title="Batal">✕</button>
+      </div>`;
+    } else if (m.url) {
+      right = `<button type="button" class="btn-dl" data-act="dl" title="Unduh">▶</button>`;
+    }
+    return `<article class="model-card ${act ? 'installed' : ''} ${has ? 'ready' : ''}" data-id="${m.id}">
       <div class="m-ico">${ic('cube')}</div>
-      <div class="model-info"><strong>${esc(mname(m))}</strong><span>${m.meta} · ${fmtGB(m.gb)}</span></div>${right}</article>`;
+      <div class="model-info"><strong>${esc(mname(m))}</strong><span>${m.meta || 'GGUF'} · ${fmtGB(m.gb)}</span>${bar}</div>${right}</article>`;
   }
   function renderModels() {
     const remote = filter === 'hub' || filter === 'gh' || filter === 'cf' || filter === 'r2';
@@ -784,38 +804,95 @@
       }, 50);
     } else renderModels();
   }));
+  function trackDownload(id, did) {
+    dlIds[id] = did;
+    dlState[id] = 'run';
+    const m = model(id);
+    const tick = setInterval(() => {
+      if (dlState[id] === 'pause') return; // keep interval, status frozen until resume
+      let s = {}; try { s = JSON.parse(NATIVE.status(did)); } catch (e) { }
+      if (s.s === 4) { // paused native
+        dlState[id] = 'pause';
+        if (s.t > 0) dlProg[id] = s.b / s.t * 100;
+        renderModels();
+        return;
+      }
+      if (s.s === 8) {
+        clearInterval(tick);
+        delete dlProg[id]; delete dlIds[id]; dlState[id] = 'done';
+        const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); };
+        finish();
+        setTimeout(finish, 400);
+        setTimeout(() => { finish(); toast(m.short + ' siap — ketuk Gunakan'); }, 900);
+      } else if (s.s === 16) {
+        clearInterval(tick);
+        delete dlProg[id]; delete dlIds[id]; delete dlState[id];
+        renderModels();
+        toast('Unduhan gagal / dibatalkan');
+      } else {
+        dlState[id] = 'run';
+        dlProg[id] = s.t > 0 ? (s.b / s.t * 100) : Math.min(99, (dlProg[id] || 0) + 0.5);
+        // live update bar without full re-render if possible
+        const card = $(`.model-card[data-id="${id}"]`);
+        if (card) {
+          const p = Math.round(dlProg[id]);
+          const bar = card.querySelector('.dl-bar i');
+          const sp = card.querySelector('.dl-bar span');
+          if (bar) bar.style.width = p + '%';
+          if (sp) sp.textContent = p + '%';
+          else renderModels();
+        } else renderModels();
+      }
+    }, 500);
+    // store interval id lightly
+    dlIds['t_' + id] = tick;
+  }
   function startDownload(id) {
     const m = model(id);
     if (!NATIVE) return toast('Unduhan hanya tersedia di aplikasi Android');
-    if (dlProg[id] != null || S.dl[id] || !m.url) return;
+    if (S.dl[id] || !m.url) return;
+    if (dlState[id] === 'run') return;
     const tok = (m.url && m.url.includes('github') && S.ghToken) ? S.ghToken : (S.hfToken || '');
     const did = NATIVE.startDownload(m.url, m.file, tok);
     if (did < 0) return toast('Nama file tidak valid');
-    dlProg[id] = 0; renderModels(); toast('Mengunduh ' + m.short);
-    let tries = 0;
-    const t = setInterval(() => {
-      let s = {}; try { s = JSON.parse(NATIVE.status(did)); } catch (e) { }
-      if (s.s === 8) {
-        clearInterval(t);
-        delete dlProg[id];
-        // Scan ulang beberapa kali — file kadang baru muncul di folder
-        const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); };
-        finish();
-        setTimeout(finish, 500);
-        setTimeout(() => { finish(); toast(m.short + ' siap dipakai'); }, 1200);
-      } else if (s.s === 16 || (s.s === 0 && tries > 3)) {
-        clearInterval(t); delete dlProg[id]; syncLocal(); renderModels();
-        toast('Unduhan gagal. Periksa koneksi atau token HF untuk model gated.');
-      } else {
-        tries++;
-        dlProg[id] = s.t > 0 ? s.b / s.t * 100 : Math.min(95, (dlProg[id] || 0) + 1);
-        const b = $(`.model-card[data-id="${id}"] .btn-dl`);
-        b && b.style.setProperty('--p', dlProg[id]);
-      }
-    }, 800);
+    dlProg[id] = 0; dlState[id] = 'run';
+    renderModels(); toast('Mengunduh ' + m.short);
+    trackDownload(id, did);
+  }
+  function pauseDownload(id) {
+    const did = dlIds[id];
+    if (did == null || !NATIVE.pauseDownload) return;
+    NATIVE.pauseDownload(did);
+    dlState[id] = 'pause';
+    clearInterval(dlIds['t_' + id]);
+    renderModels(); toast('Unduhan dijeda');
+  }
+  function resumeDownload(id) {
+    const did = dlIds[id];
+    const m = model(id);
+    if (!NATIVE) return;
+    if (did != null && NATIVE.resumeDownload) {
+      NATIVE.resumeDownload(did);
+      dlState[id] = 'run';
+      renderModels(); toast('Melanjutkan unduhan');
+      trackDownload(id, did);
+      return;
+    }
+    // fallback restart
+    if (m.url) startDownload(id);
+  }
+  function cancelDownload(id) {
+    const did = dlIds[id];
+    if (did != null) try { NATIVE.cancel(did); } catch (e) {}
+    clearInterval(dlIds['t_' + id]);
+    delete dlProg[id]; delete dlIds[id]; delete dlState[id]; delete dlIds['t_' + id];
+    renderModels(); toast('Unduhan dibatalkan');
   }
   function useModel(id) {
-    S.active = id; save(); updateTop(); renderModels(); renderSettings(); toast(model(id).short + ' sekarang aktif');
+    if (!S.dl[id]) return toast('Model belum terunduh');
+    S.active = id; save(); updateTop(); renderModels(); renderSettings();
+    toast(model(id).short + ' dipakai');
+    try { go('chat'); } catch (e) {}
   }
   async function modelSheet(id) {
     const m = model(id), has = !!S.dl[id], act = S.active === id;
@@ -825,7 +902,7 @@
       <div class="kv"><span>Sumber</span><span>${m.src === 'hub' ? 'HF Hub' : 'Perangkat'}</span></div>
       <div class="kv"><span>Status</span><span>${act ? 'Aktif' : has ? ('Terunduh' + (m.src && m.src !== 'local' && m.src !== 'hub' ? ' · ' + m.src : '')) : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh'}</span></div>
       ${!has ? '<button class="btn primary" data-v="dl">Unduh ' + fmtGB(m.gb) + '</button>' : ''}
-      ${has && !act ? '<button class="btn primary" data-v="use">Pakai model ini</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus dari perangkat</button>' : ''}
+      ${has && !act ? '<button class="btn primary" data-v="use">Gunakan model ini</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus dari perangkat</button>' : ''}
       ${act ? '<button class="btn ghost" data-v="del">Hapus dari perangkat</button>' : ''}
       ${has ? '<button class="btn ghost" data-v="files">Lihat file di Pencari</button>' : ''}
       <button class="btn ghost" data-close>Tutup</button>`,
@@ -843,9 +920,12 @@
   $('#modelList').addEventListener('click', e => {
     const card = e.target.closest('.model-card'); if (!card) return;
     const id = card.dataset.id, a = e.target.closest('[data-act]');
-    if (a && a.dataset.act === 'dl') return startDownload(id);
-    if (a && a.dataset.act === 'use') return useModel(id);
-    modelSheet(id);
+    if (!a) { modelSheet(id); return; }
+    if (a.dataset.act === 'dl') return startDownload(id);
+    if (a.dataset.act === 'pause') return pauseDownload(id);
+    if (a.dataset.act === 'resume') return resumeDownload(id);
+    if (a.dataset.act === 'cancel') return cancelDownload(id);
+    if (a.dataset.act === 'use') return useModel(id);
   });
   $('#btnModelMenu').addEventListener('click', async () => {
     const v = await openSheet(`<h2>Opsi model</h2><div style="height:6px"></div>

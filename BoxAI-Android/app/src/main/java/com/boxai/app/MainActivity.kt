@@ -39,6 +39,9 @@ import android.provider.MediaStore
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -818,39 +821,162 @@ class Bridge(
         return null
     }
 
+    // ---- Custom download (progress + pause/resume) ----
+    private data class DlJob(
+        val id: Long,
+        val url: String,
+        val name: String,
+        val token: String,
+        @Volatile var paused: Boolean = false,
+        @Volatile var cancelled: Boolean = false,
+        @Volatile var status: Int = DownloadManager.STATUS_RUNNING,
+        @Volatile var bytes: Long = 0,
+        @Volatile var total: Long = 0,
+    )
+    private val dlJobs = ConcurrentHashMap<Long, DlJob>()
+    private val dlSeq = AtomicLong(900_000L)
+
+    private fun runDlJob(job: DlJob) {
+        Thread {
+            val dest = File(dir(), job.name)
+            val part = File(dir(), job.name + ".part")
+            try {
+                var existing = if (part.exists()) part.length() else 0L
+                if (existing > 0) job.bytes = existing
+                val conn = java.net.URL(job.url).openConnection() as java.net.HttpURLConnection
+                conn.instanceFollowRedirects = true
+                conn.connectTimeout = 30_000
+                conn.readTimeout = 60_000
+                conn.setRequestProperty("User-Agent", "BoxAI/2.2 Android")
+                if (job.token.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${job.token}")
+                if (existing > 0) conn.setRequestProperty("Range", "bytes=$existing-")
+                conn.connect()
+                val code = conn.responseCode
+                if (code !in 200..299 && code != 206) {
+                    job.status = DownloadManager.STATUS_FAILED
+                    return@Thread
+                }
+                val reported = conn.contentLengthLong
+                if (code == 206) {
+                    if (reported > 0) job.total = existing + reported
+                } else {
+                    existing = 0
+                    if (part.exists()) part.delete()
+                    job.bytes = 0
+                    if (reported > 0) job.total = reported
+                }
+                if (job.total <= 0 && reported > 0) job.total = reported
+
+                conn.inputStream.use { input ->
+                    FileOutputStream(part, existing > 0 && code == 206).use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            if (job.cancelled) {
+                                job.status = DownloadManager.STATUS_FAILED
+                                return@Thread
+                            }
+                            if (job.paused) {
+                                job.status = DownloadManager.STATUS_PAUSED
+                                return@Thread
+                            }
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            job.bytes += n.toLong()
+                            job.status = DownloadManager.STATUS_RUNNING
+                        }
+                    }
+                }
+                if (job.cancelled) {
+                    job.status = DownloadManager.STATUS_FAILED
+                    return@Thread
+                }
+                if (job.paused) {
+                    job.status = DownloadManager.STATUS_PAUSED
+                    return@Thread
+                }
+                if (dest.exists()) dest.delete()
+                if (!part.renameTo(dest)) {
+                    part.copyTo(dest, overwrite = true)
+                    part.delete()
+                }
+                job.bytes = dest.length()
+                if (job.total <= 0) job.total = job.bytes
+                job.status = DownloadManager.STATUS_SUCCESSFUL
+            } catch (_: Exception) {
+                job.status = if (job.paused) DownloadManager.STATUS_PAUSED else DownloadManager.STATUS_FAILED
+            }
+        }.start()
+    }
+
     @JavascriptInterface fun startDownload(url: String, name: String, token: String): Long {
-        if (!safe(name)) return -1L
-        val d = dir()
-        File(d, name).delete()
-        val r = DownloadManager.Request(Uri.parse(url))
-            .setTitle(name)
-            .setDescription("Box AI model")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
-            .setDestinationInExternalFilesDir(ctx, "models", name)
-        if (token.isNotBlank()) r.addRequestHeader("Authorization", "Bearer $token")
-        r.addRequestHeader("User-Agent", "BoxAI/2.2 Android")
-        return try { dm.enqueue(r) } catch (e: Exception) { -1L }
+        if (!safe(name) || url.isBlank()) return -1L
+        dir()
+        dlJobs.values.firstOrNull { it.name == name && it.status == DownloadManager.STATUS_PAUSED }?.let { job ->
+            job.paused = false
+            job.cancelled = false
+            job.status = DownloadManager.STATUS_RUNNING
+            runDlJob(job)
+            return job.id
+        }
+        val id = dlSeq.incrementAndGet()
+        val job = DlJob(id, url, name, token)
+        val part = File(dir(), name + ".part")
+        if (part.exists()) job.bytes = part.length()
+        dlJobs[id] = job
+        runDlJob(job)
+        return id
+    }
+
+    @JavascriptInterface fun pauseDownload(id: Long): Boolean {
+        val job = dlJobs[id] ?: return false
+        job.paused = true
+        job.status = DownloadManager.STATUS_PAUSED
+        return true
+    }
+
+    @JavascriptInterface fun resumeDownload(id: Long): Boolean {
+        val job = dlJobs[id] ?: return false
+        if (job.status == DownloadManager.STATUS_SUCCESSFUL) return true
+        job.paused = false
+        job.cancelled = false
+        job.status = DownloadManager.STATUS_RUNNING
+        runDlJob(job)
+        return true
     }
 
     @JavascriptInterface fun status(id: Long): String {
         val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L)
+        val job = dlJobs[id]
+        if (job != null) {
+            o.put("s", job.status).put("b", job.bytes).put("t", job.total).put("name", job.name)
+            return o.toString()
+        }
         try {
             dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
                 if (c.moveToFirst()) {
                     o.put("s", c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)))
                     o.put("b", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
                     o.put("t", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
-                    val reason = c.getColumnIndex(DownloadManager.COLUMN_REASON)
-                    if (reason >= 0) o.put("r", c.getInt(reason))
                 }
             }
         } catch (_: Exception) { }
         return o.toString()
     }
 
-    @JavascriptInterface fun cancel(id: Long) { try { dm.remove(id) } catch (_: Exception) { } }
+    @JavascriptInterface fun cancel(id: Long) {
+        val job = dlJobs[id]
+        if (job != null) {
+            job.cancelled = true
+            job.paused = false
+            job.status = DownloadManager.STATUS_FAILED
+            try { File(dir(), job.name + ".part").delete() } catch (_: Exception) { }
+            dlJobs.remove(id)
+            return
+        }
+        try { dm.remove(id) } catch (_: Exception) { }
+    }
+
     @JavascriptInterface fun deleteModel(name: String): Boolean = safe(name) && File(dir(), name).delete()
     @JavascriptInterface fun renameModel(old: String, new: String): Boolean =
         safe(old) && safe(new) && !File(dir(), new).exists() && File(dir(), old).renameTo(File(dir(), new))

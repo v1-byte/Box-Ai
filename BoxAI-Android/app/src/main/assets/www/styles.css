@@ -650,3 +650,17 @@ select.field { appearance: none; -webkit-appearance: none; }
 .upd-card .btn.ghost { margin-top: 4px; }
 
 @keyframes updPulse { 0%,100%{opacity:.55;width:30%} 50%{opacity:1;width:55%} }
+
+
+/* download progress + controls */
+.dl-bar{position:relative;height:8px;margin-top:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.dl-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--volt),var(--volt-2));border-radius:99px;transition:width .35s ease}
+.dl-bar span{position:absolute;right:0;top:-16px;font-size:11px;color:var(--mute)}
+.dl-bar.paused i{background:linear-gradient(90deg,#f0c14a,#e8a838)}
+.dl-actions{display:flex;gap:8px;align-items:center}
+.btn-dl-ctrl{width:36px;height:36px;border-radius:50%;border:1px solid var(--edge);background:var(--panel-2);color:var(--bone);font-size:14px;display:grid;place-items:center}
+.btn-dl-ctrl.play{background:rgba(91,124,255,.2);border-color:rgba(91,124,255,.5);color:var(--volt-2)}
+.btn-dl-ctrl.danger{color:var(--bad);border-color:rgba(255,93,108,.35)}
+.btn-use{padding:8px 14px;border-radius:999px;border:1px solid rgba(61,220,151,.45);background:rgba(61,220,151,.12);color:var(--ok);font-weight:600;font-size:13px}
+.btn-dl{width:40px;height:40px;border-radius:50%;border:1px solid rgba(91,124,255,.45);background:rgba(91,124,255,.15);color:var(--volt-2);font-size:16px;display:grid;place-items:center}
+.model-card.ready{border-color:rgba(61,220,151,.35)}
