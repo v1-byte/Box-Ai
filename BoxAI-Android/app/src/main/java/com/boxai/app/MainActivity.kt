@@ -368,23 +368,6 @@ class Bridge(
         }
     }
 
-    private fun busyNames(): Set<String> {
-        val out = HashSet<String>()
-        try {
-            dm.query(DownloadManager.Query().setFilterByStatus(
-                DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED
-            )).use { c ->
-                val i = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                val t = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
-                while (c.moveToNext()) {
-                    c.getString(i)?.let { out.add(Uri.parse(it).lastPathSegment ?: "") }
-                    c.getString(t)?.let { if (it.endsWith(".gguf", true)) out.add(it) }
-                }
-            }
-        } catch (_: Exception) { }
-        return out
-    }
-
     @JavascriptInterface fun listModels(): String {
         val busy = busyNames()
         val seen = HashSet<String>()
