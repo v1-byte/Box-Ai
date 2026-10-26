@@ -417,6 +417,7 @@ class Bridge(
         if (manager != null) manager.getMemoryInfo(memory)
         val gib = 1024.0 * 1024.0 * 1024.0
         val totalGiB = memory.totalMem / gib
+        val availableGiB = memory.availMem / gib
         var maxContext = when {
             totalGiB < 4.5 -> 768
             totalGiB <= 6.5 -> 1024
@@ -424,6 +425,10 @@ class Bridge(
             totalGiB < 12.0 -> 2048
             else -> 4096
         }
+        // GGUF model weights are memory-mapped; file size is not an all-or-nothing
+        // RAM requirement. Constrain runtime working memory when available RAM is low.
+        if (availableGiB < 3.0) maxContext = minOf(maxContext, 512)
+        else if (availableGiB < 4.0) maxContext = minOf(maxContext, 1024)
         val thermal = thermalReading()
         val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
         var threads = when {
@@ -431,6 +436,7 @@ class Bridge(
             totalGiB < 9.0 -> minOf(3, cpuCount)
             else -> minOf(4, cpuCount)
         }.coerceAtLeast(1)
+        if (availableGiB < 3.0) threads = 1
         if (thermal.status >= 3) {
             maxContext = minOf(maxContext, 768)
             threads = 1
@@ -467,19 +473,15 @@ class Bridge(
         return file.takeIf { validHeader }
     }
 
-    private fun modelLoadMemoryWarning(file: File): String? {
+    private fun modelLoadMemoryWarning(): String? {
         val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
         val memory = ActivityManager.MemoryInfo()
         manager.getMemoryInfo(memory)
         val gib = 1024L * 1024L * 1024L
-        if (memory.totalMem <= 6L * gib + gib / 2L && file.length() >= 5L * gib / 2L) {
-            return "File model ini terlalu besar untuk dimuat stabil pada HP RAM 6 GB. Agar Chat tidak berhenti, gunakan model 1.5B/3B atau file GGUF yang lebih kecil."
-        }
-        val required = file.length() + 768L * 1024L * 1024L
-        if (memory.availMem < required) {
-            val neededGb = String.format(java.util.Locale.US, "%.1f", required / gib.toDouble())
+        val minimumReserve = gib
+        if (memory.availMem < minimumReserve) {
             val freeGb = String.format(java.util.Locale.US, "%.1f", memory.availMem / gib.toDouble())
-            return "RAM bebas belum cukup untuk memuat model: perlu sekitar ${neededGb} GB, tersedia ${freeGb} GB. Tutup aplikasi lain atau pilih model lebih kecil."
+            return "RAM bebas sangat rendah (${freeGb} GB). Sisakan setidaknya 1.0 GB, tutup aplikasi lain, lalu coba lagi. Box AI otomatis memakai konteks 512 dan satu thread saat RAM rendah."
         }
         return null
     }
@@ -498,7 +500,7 @@ class Bridge(
             currentModel = null
             currentModelPath = null
             currentModelConfigKey = null
-            modelLoadMemoryWarning(file)?.let { throw IllegalStateException(it) }
+            modelLoadMemoryWarning()?.let { throw IllegalStateException(it) }
             val config = LlamaConfig(
                 contextSize = limits.contextSize,
                 threads = limits.threads,
@@ -651,6 +653,9 @@ class Bridge(
                     i = end
                 }
                 post("window.BoxEngine&&BoxEngine.done()")
+            } catch (e: OutOfMemoryError) {
+                System.gc()
+                post("window.BoxEngine&&BoxEngine.error('RAM Android habis saat memuat model. Box AI sudah mengurangi konteks otomatis; tutup aplikasi lain atau gunakan GGUF lebih kecil/kuantisasi lebih rendah.')")
             } catch (e: Exception) {
                 val msg = (e.message ?: "unknown").replace("'", "\\'").replace("\n", " ")
                 post("window.BoxEngine&&BoxEngine.error('$msg')")
