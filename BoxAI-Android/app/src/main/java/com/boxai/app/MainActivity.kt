@@ -28,6 +28,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.BatteryManager
+import android.os.PowerManager
 import android.os.Environment
 import android.os.StatFs
 import android.webkit.JavascriptInterface
@@ -371,31 +372,74 @@ class Bridge(
 
     private data class RuntimeLimits(val contextSize: Int, val threads: Int)
 
+    private data class ThermalReading(val status: Int, val source: String, val batteryTempC: Float?)
+
+    private fun thermalReading(): ThermalReading {
+        val batteryTemp = try {
+            val intent = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val raw = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+            if (raw > 0) raw / 10f else null
+        } catch (_: Exception) { null }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val status = try {
+                (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).currentThermalStatus
+            } catch (_: Exception) { 0 }
+            return ThermalReading(status.coerceIn(0, 6), "android", batteryTemp)
+        }
+
+        val fallbackStatus = when {
+            batteryTemp == null -> 0
+            batteryTemp >= 55f -> 4
+            batteryTemp >= 50f -> 3
+            batteryTemp >= 45f -> 2
+            batteryTemp >= 40f -> 1
+            else -> 0
+        }
+        return ThermalReading(fallbackStatus, "battery", batteryTemp)
+    }
+
+    @JavascriptInterface fun thermalInfo(): String {
+        val reading = thermalReading()
+        val names = listOf("normal", "light", "moderate", "severe", "critical", "emergency", "shutdown")
+        return JSONObject()
+            .put("status", reading.status)
+            .put("label", names[reading.status])
+            .put("source", reading.source)
+            .put("batteryTempC", reading.batteryTempC ?: JSONObject.NULL)
+            .put("active", reading.status >= 2)
+            .toString()
+    }
+
     private fun runtimeLimits(requestedContext: Int): RuntimeLimits {
         val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memory = ActivityManager.MemoryInfo()
         if (manager != null) manager.getMemoryInfo(memory)
         val gib = 1024.0 * 1024.0 * 1024.0
         val totalGiB = memory.totalMem / gib
-        val maxContext = when {
+        var maxContext = when {
             totalGiB < 4.5 -> 768
             totalGiB <= 6.5 -> 1024
             totalGiB < 9.0 -> 1536
             totalGiB < 12.0 -> 2048
             else -> 4096
         }
+        val thermal = thermalReading()
         val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
         var threads = when {
             totalGiB <= 6.5 -> minOf(2, cpuCount)
             totalGiB < 9.0 -> minOf(3, cpuCount)
             else -> minOf(4, cpuCount)
         }.coerceAtLeast(1)
-        val batteryTemp = try {
-            val intent = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val raw = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
-            if (raw > 0) raw / 10f else null
-        } catch (_: Exception) { null }
-        if (batteryTemp != null && batteryTemp > 45f) threads = minOf(threads, 2)
+        if (thermal.status >= 3) {
+            maxContext = minOf(maxContext, 768)
+            threads = 1
+        } else if (thermal.status >= 2) {
+            maxContext = minOf(maxContext, 1024)
+            threads = minOf(threads, 2)
+        } else if (thermal.batteryTempC != null && thermal.batteryTempC > 45f) {
+            threads = minOf(threads, 2)
+        }
         return RuntimeLimits(requestedContext.coerceIn(512, maxContext), threads)
     }
 
@@ -520,9 +564,26 @@ class Bridge(
         }
     }
 
+    private suspend fun awaitThermalSafe() {
+        if (thermalReading().status < 4) return
+        post("window.BoxThermal&&BoxThermal.waiting(true)")
+        try {
+            val deadline = System.currentTimeMillis() + 120_000L
+            while (thermalReading().status >= 4 && System.currentTimeMillis() < deadline) {
+                delay(3_000L)
+            }
+            if (thermalReading().status >= 4) {
+                throw IllegalStateException("Perangkat masih terlalu panas. Box AI menunda inferensi untuk melindungi HP; diamkan sebentar lalu coba lagi.")
+            }
+        } finally {
+            post("window.BoxThermal&&BoxThermal.waiting(false)")
+        }
+    }
+
     @JavascriptInterface fun generate(json: String) {
         scope.launch(Dispatchers.Default) {
             try {
+                awaitThermalSafe()
                 val o = JSONObject(json)
                 val modelName = o.optString("model", "")
                 val requestedModelId = o.optString("model_id", "")

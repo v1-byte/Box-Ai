@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.30';
+  const APP_VERSION = '2.2.31';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -2078,6 +2078,45 @@
       if (tag && cmpVer(tag, cur) > 0) startInAppUpdate(false);
     } catch (e) {}
   }
+  let thermalSnapshot = {status: 0, label: 'normal', source: 'unavailable', batteryTempC: null, active: false};
+  let thermalWaiting = false;
+  const thermalStatusText = status => ['Normal', 'Ringan', 'Hangat', 'Panas', 'Kritis', 'Darurat', 'Shutdown'][Math.max(0, Math.min(6, status | 0))];
+  function applyThermalState() {
+    const button = $('#btnThermal');
+    if (!button) return;
+    const status = thermalSnapshot.status | 0;
+    const state = thermalWaiting || status >= 4 ? 'paused' : status >= 3 ? 'throttled' : status >= 2 ? 'warm' : 'normal';
+    const label = thermalWaiting ? 'Menunggu suhu HP turun' : 'Perlindungan termal: ' + thermalStatusText(status);
+    button.dataset.state = state;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+  }
+  function refreshThermalState() {
+    try {
+      if (!NATIVE || !NATIVE.thermalInfo) return;
+      const info = JSON.parse(NATIVE.thermalInfo() || '{}');
+      thermalSnapshot = {...thermalSnapshot, ...info};
+      applyThermalState();
+    } catch (e) {}
+  }
+  window.BoxThermal = {
+    waiting(value) { thermalWaiting = !!value; applyThermalState(); },
+  };
+  $('#btnThermal').addEventListener('click', () => {
+    const status = thermalSnapshot.status | 0;
+    const statusText = thermalWaiting ? 'Inferensi sedang ditahan sampai suhu turun.' : 'Status perangkat: ' + thermalStatusText(status) + '.';
+    const details = thermalSnapshot.batteryTempC == null ? '' : `<p class="sub">Suhu baterai: ${Number(thermalSnapshot.batteryTempC).toFixed(1)} °C</p>`;
+    const action = status >= 4 || thermalWaiting
+      ? 'Box AI menunda permintaan baru sampai status termal membaik.'
+      : status >= 3
+        ? 'Box AI otomatis mengurangi thread CPU dan ukuran konteks pada pemuatan/generasi berikutnya.'
+        : status >= 2
+          ? 'Box AI otomatis membatasi thread CPU dan konteks agar beban lebih rendah.'
+          : 'Perlindungan aktif memantau status termal Android dan menyesuaikan beban model bila perangkat mulai panas.';
+    openSheet(`<h2>Perlindungan suhu otomatis</h2><p class="sub">${esc(statusText)}</p>${details}<p>${esc(action)}</p><p class="sub">Ini pengelolaan beban perangkat lunak, bukan kipas fisik. Aplikasi tidak dapat menyalakan pendingin eksternal.</p><button class="btn ghost" data-close>Tutup</button>`);
+  });
+  refreshThermalState();
+  setInterval(() => { if (!document.hidden) refreshThermalState(); }, 5000);
   setTimeout(checkUpdateSilent, 2800);
   // Sinkronkan model aplikasi biasa saja; pemindaian mendalam hanya lewat tombol Pindai.
   applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();

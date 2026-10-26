@@ -139,6 +139,12 @@ button { font-family: inherit; color: inherit; }
   display: grid; place-items: center; color: var(--bone); transition: background .15s, transform .15s;
 }
 .icon-btn:active { background: var(--panel-2); transform: scale(.92); }
+.thermal-btn { color: var(--ok); }
+.thermal-btn[data-state="warm"] { color: #ffc857; }
+.thermal-btn[data-state="throttled"], .thermal-btn[data-state="paused"] { color: var(--bad); }
+.thermal-btn[data-state="throttled"] .ic { animation: fan-spin 1.4s linear infinite; }
+.thermal-btn[data-state="paused"] .ic { animation: fan-spin .65s linear infinite; }
+@keyframes fan-spin { to { transform: rotate(360deg); } }
 
 /* ---------- CHAT ---------- */
 .messages { flex: 1; overflow-y: auto; padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 14px; scrollbar-width: none; }
