@@ -1042,15 +1042,21 @@ class Bridge(
         val o = JSONObject().put("s", 0).put("b", 0L).put("t", 0L)
         val job = ModelDownloadService.jobs[id]
         if (job != null) {
+            val b = job.bytes.get()
+            val tot = job.total.get()
+            val spd = job.speedBps.get()
             o.put("s", job.status)
-            o.put("b", job.bytes.get())
-            o.put("t", job.total.get())
+            o.put("b", b)
+            o.put("t", tot)
+            o.put("spd", spd)
+            o.put("parts", job.activeParts.get())
+            o.put("retries", job.retries.get())
             o.put("name", job.name)
+            o.put("detail", job.detail)
+            if (spd > 0 && tot > b) o.put("eta", (tot - b) / spd)
             if (job.error.isNotEmpty()) o.put("err", job.error)
             return o.toString()
         }
-        // Job selesai & dihapus dari map → anggap sukses jika file ada
-        // (JS sudah handle s=8; jika hilang, s=0 → trackDownload boleh timeout)
         return o.toString()
     }
 

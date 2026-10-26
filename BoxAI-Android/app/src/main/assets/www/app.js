@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.27';
+  const APP_VERSION = '2.2.28';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -642,7 +642,7 @@
 
   /* ================= MODELS ================= */
   let filter = 'all';
-  const dlProg = {}; const dlIds = {}; const dlState = {}; // run|pause|done
+  const dlProg = {}; const dlIds = {}; const dlState = {}; const dlMeta = {}; // run|pause|done
   function renderDlPanel() {
     let panel = $('#dlPanel');
     if (!panel) {
@@ -655,11 +655,27 @@
     const ids = Object.keys(dlState).filter(id => dlState[id] === 'run' || dlState[id] === 'pause');
     if (!ids.length) { panel.hidden = true; panel.innerHTML = ''; return; }
     panel.hidden = false;
-    panel.innerHTML = '<div class="dl-panel-title">Unduhan aktif</div>' + ids.map(id => {
+    function fmtB(n) {
+      n = +n || 0;
+      if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+      if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+      if (n >= 1024) return Math.round(n / 1024) + ' KB';
+      return n + ' B';
+    }
+    function fmtSpd(bps) {
+      bps = +bps || 0;
+      if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' MB/s';
+      if (bps >= 1e3) return Math.round(bps / 1e3) + ' KB/s';
+      return bps ? (bps + ' B/s') : '—';
+    }
+    panel.innerHTML = '<div class="dl-panel-title">Unduhan turbo</div>' + ids.map(id => {
       const m = model(id);
       const st = dlState[id];
+      const meta = dlMeta[id] || {};
       const p = Math.max(0, Math.min(100, Math.round(dlProg[id] || 0)));
-      const name = (m && m.short) ? m.short : id;
+      const name = (m && m.short) ? m.short : (meta.name || id);
+      const b = meta.b || 0, t = meta.t || 0, spd = meta.spd || 0, eta = meta.eta;
+      const detail = meta.detail || (st === 'pause' ? 'Dijeda' : 'Mengunduh…');
       const controls = st === 'pause'
         ? `<button type="button" class="btn-dl-ctrl play" data-dl="${esc(id)}" data-act="resume">▶ Lanjut</button>
            <button type="button" class="btn-dl-ctrl danger" data-dl="${esc(id)}" data-act="cancel">✕</button>`
@@ -668,7 +684,8 @@
       return `<div class="dl-panel-row" data-id="${esc(id)}">
         <div class="dl-panel-meta"><strong>${esc(name)}</strong>
           <div class="dl-bar ${st === 'pause' ? 'paused' : ''}"><i style="width:${p}%"></i></div>
-          <span class="dl-pct">${p}%${st === 'pause' ? ' · dijeda' : ' · mengunduh'}</span>
+          <span class="dl-pct">${p}% · ${fmtB(b)} / ${fmtB(t)} · ${fmtSpd(spd)}${eta != null && eta >= 0 ? ' · ETA ' + eta + 's' : ''}</span>
+          <span class="dl-detail">${esc(detail)}</span>
         </div>
         <div class="dl-actions">${controls}</div>
       </div>`;
@@ -978,11 +995,23 @@
   function trackDownload(id, did) {
     dlIds[id] = did;
     dlState[id] = 'run';
+    dlMeta[id] = dlMeta[id] || {};
     const m = model(id);
+    let idle = 0;
     const tick = setInterval(() => {
-      if (dlState[id] === 'pause') { renderDlPanel(); return; }
-      let s = {}; try { s = JSON.parse(NATIVE.status(did)); } catch (e) { }
-      if (s.s === 4) { // paused native
+      if (dlState[id] === 'pause') return;
+      let s = {};
+      try { s = JSON.parse(NATIVE.status(did) || '{}'); } catch (e) { }
+      if (s.b != null) dlMeta[id].b = s.b;
+      if (s.t != null) dlMeta[id].t = s.t;
+      if (s.spd != null) dlMeta[id].spd = s.spd;
+      if (s.eta != null) dlMeta[id].eta = s.eta;
+      if (s.detail) dlMeta[id].detail = s.detail;
+      if (s.name) dlMeta[id].name = s.name;
+      if (s.parts != null) dlMeta[id].parts = s.parts;
+      if (s.retries != null) dlMeta[id].retries = s.retries;
+
+      if (s.s === 4) {
         dlState[id] = 'pause';
         if (s.t > 0) dlProg[id] = s.b / s.t * 100;
         renderDlPanel(); renderModels();
@@ -990,42 +1019,45 @@
       }
       if (s.s === 8) {
         clearInterval(tick);
-        delete dlProg[id]; delete dlIds[id]; dlState[id] = 'done';
-        const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); };
+        delete dlProg[id]; delete dlIds[id]; dlState[id] = 'done'; delete dlMeta[id];
+        const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); renderDlPanel(); };
         finish();
         setTimeout(finish, 400);
-        setTimeout(() => { finish(); renderDlPanel(); toast(m.short + ' siap — ketuk Gunakan'); }, 900);
-      } else if (s.s === 16) {
-        clearInterval(tick);
-        delete dlProg[id]; delete dlIds[id]; delete dlState[id];
-        renderDlPanel(); renderModels();
-        let err = (s.err || '');
-        try { if (!err && NATIVE.lastDownloadError) err = NATIVE.lastDownloadError(); } catch (e) {}
-        toast(err ? ('Unduhan gagal: ' + err) : 'Unduhan gagal / dibatalkan');
-      } else {
-        dlState[id] = 'run';
-        dlProg[id] = s.t > 0 ? (s.b / s.t * 100) : Math.min(99, (dlProg[id] || 0) + 0.5);
-        renderDlPanel();
-        const card = document.querySelector(`.model-card[data-id="${id}"]`);
-        if (card) {
-          const p = Math.round(dlProg[id]);
-          const bar = card.querySelector('.dl-bar i');
-          const sp = card.querySelector('.dl-bar span');
-          if (bar) bar.style.width = p + '%';
-          if (sp) sp.textContent = p + '%';
-        }
-        // Update panel pct text live
-        const row = document.querySelector(`#dlPanel .dl-panel-row[data-id="${id}"]`);
-        if (row) {
-          const p = Math.round(dlProg[id] || 0);
-          const bi = row.querySelector('.dl-bar i');
-          const pct = row.querySelector('.dl-pct');
-          if (bi) bi.style.width = p + '%';
-          if (pct) pct.textContent = p + '% · mengunduh';
-        }
+        setTimeout(() => { finish(); toast((m.short || 'Model') + ' siap — ketuk Gunakan'); }, 900);
+        return;
       }
-    }, 500);
-    // store interval id lightly
+      if (s.s === 16) {
+        clearInterval(tick);
+        const er = s.err || (NATIVE.lastDownloadError && NATIVE.lastDownloadError()) || '';
+        delete dlProg[id]; delete dlIds[id]; delete dlState[id]; delete dlMeta[id];
+        renderDlPanel(); renderModels();
+        toast('Unduhan gagal' + (er ? (': ' + er) : ''));
+        return;
+      }
+      if (s.s === 0) {
+        idle++;
+        if (idle > 40) { // ~20s no status
+          clearInterval(tick);
+          delete dlProg[id]; delete dlIds[id]; delete dlState[id]; delete dlMeta[id];
+          renderDlPanel(); renderModels();
+          toast('Unduhan tidak merespons — coba lagi');
+        }
+        return;
+      }
+      idle = 0;
+      dlState[id] = 'run';
+      if (s.t > 0) dlProg[id] = (s.b / s.t) * 100;
+      else dlProg[id] = Math.min(99, (dlProg[id] || 0) + 0.3);
+      renderDlPanel();
+      const card = document.querySelector('.model-card[data-id="' + id + '"]');
+      if (card) {
+        const p = Math.round(dlProg[id] || 0);
+        const bar = card.querySelector('.dl-bar i');
+        const sp = card.querySelector('.dl-bar span');
+        if (bar) bar.style.width = p + '%';
+        if (sp) sp.textContent = p + '%';
+      }
+    }, 400);
     dlIds['t_' + id] = tick;
   }
   function startDownload(id) {
