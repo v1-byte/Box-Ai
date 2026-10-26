@@ -78,7 +78,7 @@ class ModelDownloadService : Service() {
             conn.connectTimeout = 20_000
             conn.readTimeout = 60_000
             conn.useCaches = false
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) BoxAI/2.2 Turbo")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) BoxAI/2.2.29 Turbo")
             conn.setRequestProperty("Accept", "*/*")
             conn.setRequestProperty("Accept-Encoding", "identity")
             conn.setRequestProperty("Connection", "keep-alive")

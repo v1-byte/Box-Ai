@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.28';
+  const APP_VERSION = '2.2.29';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -20,13 +20,18 @@
   const SEED_CHAT = [];
   const DEFAULTS = {
     theme: 'system', lang: 'id', haptics: true, onDevice: true,
-    temp: 0.7, topp: 0.9, maxTok: 2048, ctx: 4096,
+    temp: 0.7, topp: 0.9, maxTok: 1024, ctx: 1024,
     active: '', dl: {}, pal: null, pals: [],
     cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
     chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', cfToken: '', r2Url: '', metaToken: '', ghPath: 'boxai/', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
+  let engineLoadingId = '', engineLoadedId = '';
+  try {
+    const recommended = NATIVE && NATIVE.recommendedContext ? Number(NATIVE.recommendedContext()) : 0;
+    if (recommended >= 512) S.ctx = Math.max(512, Math.min(Number(S.ctx) || DEFAULTS.ctx, recommended));
+  } catch (_) { S.ctx = Math.max(512, Math.min(Number(S.ctx) || DEFAULTS.ctx, DEFAULTS.ctx)); }
   const SECRET_FIELDS = { hfToken: 'hf', ghToken: 'gh', cfToken: 'cf', metaToken: 'meta' };
   function loadSecureSecrets() {
     if (!NATIVE || !NATIVE.getSecret) return;
@@ -279,9 +284,25 @@
     generate(msgs) {
       return new Promise((res, rej) => {
         let buf = '';
-        window.BoxEngine = { token: t => { buf += t; live(buf); }, done: () => res(buf), error: m => rej(new Error(m)) };
-        NATIVE.generate(JSON.stringify({ model: meta(S.active).file, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx }));
+        const modelId = S.active;
+        window.BoxEngine = {
+          token: t => { buf += t; live(buf); },
+          done: () => res(buf),
+          error: m => rej(new Error(m))
+        };
+        NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx }));
       });
+    }
+  };
+  window.BoxModel = {
+    result(ok, name, message, modelId) {
+      const id = modelId || S.active;
+      if (id !== S.active) return;
+      engineLoadingId = '';
+      engineLoadedId = ok ? id : '';
+      renderModels();
+      if (ok) toast(model(id).short + ' siap dipakai di Chat');
+      else toast('Gagal memuat model: ' + (message || 'periksa file GGUF dan RAM'));
     }
   };
   function live(t) {
@@ -709,7 +730,7 @@
     if (!m) {
       const q = (file.match(QRE) || ['GGUF'])[0].toUpperCase(), stem = file.replace(/\.gguf$/i, '');
       m = { id, name: stem, short: stem.length > 22 ? stem.slice(0, 21) + '…' : stem, meta: q, gb: size / 1073741824, src, url, file };
-      MMETA_DEF[id] = { file, arch: 'GGUF', quant: q, ctx: 4096, tpl: 'chatml' };
+      MMETA_DEF[id] = { file, arch: 'GGUF', quant: q, ctx: 1024, tpl: 'chatml' };
       MODELS.push(m);
     } else { if (size) m.gb = size / 1073741824; if (url && !m.url) m.url = url; }
     return m;
@@ -728,7 +749,8 @@
       // Prefer absolute path so generate can load external / Pocket AI files
       const fileRef = (f.path && String(f.path).charAt(0) === '/') ? f.path : (f.path || f.name);
       if (MMETA_DEF[id]) { MMETA_DEF[id].file = fileRef; MMETA_DEF[id].path = f.path || fileRef; MMETA_DEF[id].source = src; }
-      else MMETA_DEF[id] = { file: fileRef, path: f.path || fileRef, source: src, arch: 'GGUF', quant: 'GGUF', ctx: 2048, tpl: 'chatml' };
+      else MMETA_DEF[id] = { file: fileRef, path: f.path || fileRef, source: src, arch: 'GGUF', quant: 'GGUF', ctx: 1024, tpl: 'chatml' };
+      if (S.mmeta[id]) { S.mmeta[id].file = fileRef; S.mmeta[id].path = f.path || fileRef; }
     });
     for (let i = MODELS.length - 1; i >= 0; i--) {
       const m = MODELS[i];
@@ -806,7 +828,9 @@
     let actions;
     let bar = '';
     if (has) {
-      actions = `<button type="button" class="btn-use" data-act="use">Gunakan</button>`;
+      if (engineLoadingId === id) actions = '<span class="tag"><i></i>Memuat…</span>';
+      else if (engineLoadedId === id) actions = '<span class="tag ok"><i></i>Siap</span>';
+      else actions = `<button type="button" class="btn-use" data-act="use">Muat</button>`;
     } else if (st === 'run' || (prog != null && st !== 'pause')) {
       const p = Math.max(0, Math.min(100, Math.round(prog || 0)));
       bar = `<div class="dl-bar"><i style="width:${p}%"></i><span>${p}%</span></div>`;
@@ -938,8 +962,12 @@
     const st = dlState[m.id] || (prog != null ? 'run' : '');
     let right = '';
     let bar = '';
-    if (act) {
-      right = '<span class="tag ok"><i></i>Aktif</span>';
+    if (act && engineLoadingId === m.id) {
+      right = '<span class="tag"><i></i>Memuat…</span>';
+    } else if (act && engineLoadedId === m.id) {
+      right = '<span class="tag ok"><i></i>Siap</span>';
+    } else if (act) {
+      right = '<button type="button" class="btn-use" data-act="use" title="Muat model ke engine">Muat</button>';
     } else if (has) {
       right = '<button type="button" class="btn-use" data-act="use" title="Gunakan model ini">Gunakan</button>';
     } else if (st === 'run' || (prog != null && st !== 'pause')) {
@@ -1020,7 +1048,11 @@
       if (s.s === 8) {
         clearInterval(tick);
         delete dlProg[id]; delete dlIds[id]; dlState[id] = 'done'; delete dlMeta[id];
-        const finish = () => { syncLocal(); renderModels(); renderSettings(); updateTop(); renderDlPanel(); };
+        const finish = () => {
+          syncLocal();
+          if (!S.active && S.dl[id]) { S.active = id; save(); }
+          renderModels(); renderSettings(); updateTop(); renderDlPanel();
+        };
         finish();
         setTimeout(finish, 400);
         setTimeout(() => { finish(); toast((m.short || 'Model') + ' siap — ketuk Gunakan'); }, 900);
@@ -1118,17 +1150,37 @@
   }
   function useModel(id) {
     if (!S.dl[id]) return toast('Model belum terunduh');
+    if (engineLoadingId === id) return toast('Model sedang dimuat ke engine…');
+    if (engineLoadedId === id) { go('chat'); return toast(model(id).short + ' sudah siap di Chat'); }
     S.active = id; save(); updateTop(); renderModels(); renderSettings();
-    toast(model(id).short + ' dipakai');
-    try { go('chat'); } catch (e) {}
+    engineLoadingId = id; engineLoadedId = '';
+    renderModels();
+    try {
+      if (NATIVE && NATIVE.preloadModel) {
+        const cfg = meta(id);
+        const temp = Number.isFinite(Number(S.temp)) ? Number(S.temp) : 0.7;
+        const topP = Number.isFinite(Number(S.topp)) ? Number(S.topp) : 0.9;
+        NATIVE.preloadModel(cfg.file, Number(S.ctx) || 1024, temp, topP, id);
+        toast('Memuat ' + model(id).short + ' ke engine…');
+      } else {
+        engineLoadingId = '';
+        toast(model(id).short + ' dipilih');
+      }
+      go('chat');
+    } catch (e) {
+      engineLoadingId = '';
+      renderModels();
+      toast('Gagal mulai memuat model: ' + (e.message || e));
+    }
   }
   async function modelSheet(id) {
     const m = model(id), has = !!S.dl[id], act = S.active === id;
+    const modelStatus = act ? (engineLoadingId === id ? 'Memuat ke engine' : engineLoadedId === id ? 'Siap di Chat' : 'Dipilih · belum dimuat') : has ? ('Terunduh' + (m.src && m.src !== 'local' && m.src !== 'hub' ? ' · ' + m.src : '')) : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh';
     const v = await openSheet(`<h2>${esc(mname(m))}</h2><p class="sub">Model bahasa lokal berformat GGUF.</p>
       <div class="kv"><span>Parameter</span><span>${m.meta}</span></div>
       <div class="kv"><span>Ukuran file</span><span>${fmtGB(m.gb)}</span></div>
       <div class="kv"><span>Sumber</span><span>${m.src === 'hub' ? 'HF Hub' : 'Perangkat'}</span></div>
-      <div class="kv"><span>Status</span><span>${act ? 'Aktif' : has ? ('Terunduh' + (m.src && m.src !== 'local' && m.src !== 'hub' ? ' · ' + m.src : '')) : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh'}</span></div>
+      <div class="kv"><span>Status</span><span>${modelStatus}</span></div>
       ${!has ? '<button class="btn primary" data-v="dl">Unduh ' + fmtGB(m.gb) + '</button>' : ''}
       ${has && !act ? '<button class="btn primary" data-v="use">Gunakan model ini</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus dari perangkat</button>' : ''}
       ${act ? '<button class="btn ghost" data-v="del">Hapus dari perangkat</button>' : ''}

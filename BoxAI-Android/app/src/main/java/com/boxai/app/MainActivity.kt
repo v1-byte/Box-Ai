@@ -23,9 +23,11 @@ import androidx.webkit.WebViewAssetLoader
 import android.app.ActivityManager
 import android.app.DownloadManager
 import android.content.Context
+import android.content.IntentFilter
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.BatteryManager
 import android.os.Environment
 import android.os.StatFs
 import android.webkit.JavascriptInterface
@@ -364,7 +366,112 @@ class Bridge(
 
     @Volatile private var currentModel: LlamaModel? = null
     @Volatile private var currentModelPath: String? = null
+    @Volatile private var currentModelConfigKey: String? = null
     private val engineLock = Mutex()
+
+    private data class RuntimeLimits(val contextSize: Int, val threads: Int)
+
+    private fun runtimeLimits(requestedContext: Int): RuntimeLimits {
+        val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memory = ActivityManager.MemoryInfo()
+        if (manager != null) manager.getMemoryInfo(memory)
+        val gib = 1024.0 * 1024.0 * 1024.0
+        val totalGiB = memory.totalMem / gib
+        val maxContext = when {
+            totalGiB < 4.5 -> 768
+            totalGiB <= 6.5 -> 1024
+            totalGiB < 9.0 -> 1536
+            totalGiB < 12.0 -> 2048
+            else -> 4096
+        }
+        val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+        var threads = when {
+            totalGiB <= 6.5 -> minOf(2, cpuCount)
+            totalGiB < 9.0 -> minOf(3, cpuCount)
+            else -> minOf(4, cpuCount)
+        }.coerceAtLeast(1)
+        val batteryTemp = try {
+            val intent = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val raw = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+            if (raw > 0) raw / 10f else null
+        } catch (_: Exception) { null }
+        if (batteryTemp != null && batteryTemp > 45f) threads = minOf(threads, 2)
+        return RuntimeLimits(requestedContext.coerceIn(512, maxContext), threads)
+    }
+
+    @JavascriptInterface fun recommendedContext(): Int = runtimeLimits(4096).contextSize
+
+    private fun resolveModelFile(modelName: String): File? {
+        val file = if (modelName.startsWith("/")) {
+            File(modelName).takeIf { safe(it.name) }
+        } else {
+            if (!safe(modelName)) null else File(dir(), modelName)
+        } ?: return null
+        if (!file.isFile || !file.name.endsWith(".gguf", true) || file.length() < 5L * 1024L * 1024L) return null
+        val validHeader = try {
+            file.inputStream().use { input ->
+                val header = ByteArray(4)
+                var offset = 0
+                while (offset < header.size) {
+                    val count = input.read(header, offset, header.size - offset)
+                    if (count <= 0) break
+                    offset += count
+                }
+                offset == 4 && String(header, Charsets.US_ASCII) == "GGUF"
+            }
+        } catch (_: Exception) { false }
+        return file.takeIf { validHeader }
+    }
+
+    private fun modelLoadMemoryWarning(file: File): String? {
+        val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
+        val memory = ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(memory)
+        val gib = 1024L * 1024L * 1024L
+        if (memory.totalMem <= 6L * gib + gib / 2L && file.length() >= 5L * gib / 2L) {
+            return "File model ini terlalu besar untuk dimuat stabil pada HP RAM 6 GB. Agar Chat tidak berhenti, gunakan model 1.5B/3B atau file GGUF yang lebih kecil."
+        }
+        val required = file.length() + 768L * 1024L * 1024L
+        if (memory.availMem < required) {
+            val neededGb = String.format(java.util.Locale.US, "%.1f", required / gib.toDouble())
+            val freeGb = String.format(java.util.Locale.US, "%.1f", memory.availMem / gib.toDouble())
+            return "RAM bebas belum cukup untuk memuat model: perlu sekitar ${neededGb} GB, tersedia ${freeGb} GB. Tutup aplikasi lain atau pilih model lebih kecil."
+        }
+        return null
+    }
+
+    private suspend fun loadOrReuseModel(
+        file: File,
+        requestedContext: Int,
+        temperature: Float,
+        topP: Float
+    ): LlamaModel {
+        val limits = runtimeLimits(requestedContext)
+        val configKey = "${file.absolutePath}|${limits.contextSize}|${limits.threads}|$temperature|$topP"
+        return engineLock.withLock {
+            if (currentModel != null && currentModelConfigKey == configKey) return@withLock currentModel!!
+            currentModel?.let { runCatching { Llama.releaseModel(it) } }
+            currentModel = null
+            currentModelPath = null
+            currentModelConfigKey = null
+            modelLoadMemoryWarning(file)?.let { throw IllegalStateException(it) }
+            val config = LlamaConfig(
+                contextSize = limits.contextSize,
+                threads = limits.threads,
+                temperature = temperature,
+                topP = topP,
+            )
+            val loaded = Llama.loadModel(file.absolutePath, config)
+            currentModel = loaded
+            currentModelPath = file.absolutePath
+            currentModelConfigKey = configKey
+            loaded
+        }
+    }
+
+    private fun modelResult(ok: Boolean, name: String, message: String = "", modelId: String = "") {
+        post("window.BoxModel&&window.BoxModel.result(${if (ok) "true" else "false"},${JSONObject.quote(name)},${JSONObject.quote(message)},${JSONObject.quote(modelId)})")
+    }
 
     @JavascriptInterface fun webSearch(id: Int, query: String) {
         Thread {
@@ -393,61 +500,49 @@ class Bridge(
 
     @JavascriptInterface fun engineAvailable(): Boolean = true
 
+    /** Explicit load action for the Models screen; Chat also calls the same guarded loader lazily. */
+    @JavascriptInterface fun preloadModel(modelName: String, requestedContext: Int, temperature: Float, topP: Float, modelId: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val file = resolveModelFile(modelName)
+                    ?: throw IllegalArgumentException("File GGUF tidak ditemukan atau header GGUF tidak valid: ${File(modelName).name}")
+                loadOrReuseModel(
+                    file,
+                    requestedContext,
+                    temperature.coerceIn(0f, 2f),
+                    topP.coerceIn(0.01f, 1f)
+                )
+                modelResult(true, file.name, modelId = modelId)
+            } catch (error: Throwable) {
+                val message = (error.message ?: error.javaClass.simpleName).take(500)
+                modelResult(false, modelName.substringAfterLast('/'), message, modelId)
+            }
+        }
+    }
+
     @JavascriptInterface fun generate(json: String) {
         scope.launch(Dispatchers.Default) {
             try {
                 val o = JSONObject(json)
                 val modelName = o.optString("model", "")
+                val requestedModelId = o.optString("model_id", "")
                 if (modelName.isBlank()) {
                     post("window.BoxEngine&&BoxEngine.error('Model tidak valid')")
                     return@launch
                 }
-                // Absolute path (external / Pocket AI) OR filename inside app models dir
-                val modelFile = if (modelName.startsWith("/")) {
-                    val f = File(modelName)
-                    if (!f.isFile || !f.name.endsWith(".gguf", true) || !safe(f.name)) {
-                        post("window.BoxEngine&&BoxEngine.error('Path model tidak valid')")
-                        return@launch
-                    }
-                    f
-                } else {
-                    if (!safe(modelName)) {
-                        post("window.BoxEngine&&BoxEngine.error('Model tidak valid')")
-                        return@launch
-                    }
-                    File(dir(), modelName)
-                }
-                if (!modelFile.exists() || modelFile.length() < 1024) {
-                    post("window.BoxEngine&&BoxEngine.error('File model tidak ditemukan: ${modelFile.name}')")
+                val modelFile = resolveModelFile(modelName)
+                if (modelFile == null) {
+                    post("window.BoxEngine&&BoxEngine.error('File GGUF tidak ditemukan atau header tidak valid')")
                     return@launch
                 }
 
                 val nCtx = o.optInt("n_ctx", 2048).coerceIn(512, 8192)
-                val maxTok = o.optInt("max_tokens", 512).coerceIn(16, 4096)
+                val maxOutput = if (runtimeLimits(nCtx).contextSize <= 1024) 1024 else 4096
+                val maxTok = o.optInt("max_tokens", 512).coerceIn(16, maxOutput)
                 val temp = o.optDouble("temp", 0.7).toFloat().coerceIn(0f, 2f)
                 val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
-                val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
-
-                val path = modelFile.absolutePath
-                val model = engineLock.withLock {
-                    if (currentModel != null && currentModelPath == path) {
-                        currentModel!!
-                    } else {
-                        currentModel?.let { runCatching { Llama.releaseModel(it) } }
-                        currentModel = null
-                        currentModelPath = null
-                        val cfg = LlamaConfig(
-                            contextSize = nCtx,
-                            threads = threads,
-                            temperature = temp,
-                            topP = topP,
-                        )
-                        val m = Llama.loadModel(path, cfg)
-                        currentModel = m
-                        currentModelPath = path
-                        m
-                    }
-                }
+                val model = loadOrReuseModel(modelFile, nCtx, temp, topP)
+                modelResult(true, modelFile.name, modelId = requestedModelId)
 
                 val messages = o.optJSONArray("messages") ?: JSONArray()
                 var systemPrompt = ""
@@ -508,6 +603,7 @@ class Bridge(
                 currentModel?.let { runCatching { Llama.releaseModel(it) } }
                 currentModel = null
                 currentModelPath = null
+                currentModelConfigKey = null
             }
         }
     }
