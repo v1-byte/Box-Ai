@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.29';
+  const APP_VERSION = '2.2.30';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -989,13 +989,14 @@
     }
     return `<article class="model-card ${act ? 'installed' : ''} ${has ? 'ready' : ''}" data-id="${m.id}">
       <div class="m-ico">${ic('cube')}</div>
-      <div class="model-info"><strong>${esc(mname(m))}</strong><span>${m.meta || 'GGUF'} · ${fmtGB(m.gb)}</span>${bar}</div>${right}</article>`;
+      <div class="model-info"><strong>${esc(mname(m))}</strong><span>${m.meta || 'GGUF'} · ${fmtGB(m.gb)}</span>${bar}</div><div class="dl-actions">${right}<button type="button" class="btn-dl-ctrl" data-act="gear" title="Pengaturan model" aria-label="Pengaturan model">${ic('gear')}</button></div></article>`;
   }
   function renderModels() {
     const remote = filter === 'hub' || filter === 'gh' || filter === 'cf' || filter === 'r2';
     $('#hfBox').hidden = filter !== 'hub';
     if ($('#connBox')) $('#connBox').hidden = !(filter === 'cf' || filter === 'r2');
     $('#hubList').hidden = !remote; $('#modelList').hidden = remote;
+    $('#btnScanModels').hidden = filter !== 'dl';
     if (filter === 'hub') { if (!hubLoaded) hfSearch(''); return; }
     if (filter === 'gh') { loadGithubModels(); return; }
     if (filter === 'cf') { loadManifestModels('cf'); return; }
@@ -1007,19 +1008,15 @@
     let h = '';
     if (ready.length) h += '<h3 class="section-h">Siap di perangkat</h3>' + ready.map(modelCard).join('');
     if (avail.length) h += '<h3 class="section-h">Tersedia</h3>' + avail.map(modelCard).join('');
-    if (!h) h = '<p class="empty">Belum ada model. Buka HF Hub untuk mencari dan mengunduh model GGUF.</p>';
+    if (!h) h = filter === 'dl' ? '<p class="empty">Belum ada model terunduh. Tekan Pindai untuk mencari model di perangkat.</p>' : '<p class="empty">Belum ada model. Buka HF Hub untuk mencari dan mengunduh model GGUF.</p>';
     $('#modelList').innerHTML = h;
   }
   $$('.chip').forEach(c => c.addEventListener('click', () => {
     $$('.chip').forEach(x => x.classList.remove('active')); c.classList.add('active');
     filter = c.dataset.f;
-    if (filter === 'dl' && NATIVE && NATIVE.listModelsDeep) {
-      toast('Memuat model terunduh dari seluruh perangkat…');
-      setTimeout(() => {
-        try { syncLocalDeep(); renderModels(); updateTop(); } catch (e) {}
-      }, 50);
-    } else renderModels();
+    renderModels();
   }));
+  $('#btnScanModels').addEventListener('click', () => ACTIONS.scanModels());
   function trackDownload(id, did) {
     dlIds[id] = did;
     dlState[id] = 'run';
@@ -1201,6 +1198,7 @@
     const card = e.target.closest('.model-card'); if (!card) return;
     const id = card.dataset.id, a = e.target.closest('[data-act]');
     if (!a) { modelSheet(id); return; }
+    if (a.dataset.act === 'gear') return modelSheet(id);
     if (a.dataset.act === 'dl') return startDownload(id);
     if (a.dataset.act === 'pause') return pauseDownload(id);
     if (a.dataset.act === 'resume') return resumeDownload(id);
@@ -2081,23 +2079,7 @@
     } catch (e) {}
   }
   setTimeout(checkUpdateSilent, 2800);
-  // Minta izin storage + rescan model (Download / app lain)
-  setTimeout(() => {
-    try {
-      if (!NATIVE) return;
-      const n = JSON.parse(NATIVE.listModels() || '[]');
-      if ((!n || !n.length) && NATIVE.requestStoragePermission) {
-        // Jika belum ada model, minta akses folder agar scan lebih luas
-        if (NATIVE.hasStoragePermission && !NATIVE.hasStoragePermission()) {
-          toast('Izinkan akses file agar model di Download / app lain terdeteksi');
-          NATIVE.requestStoragePermission();
-        }
-      }
-      setTimeout(() => { syncLocal(); renderModels(); renderSettings(); updateTop(); }, 1500);
-    } catch (e) {}
-  }, 3500);
-
-  // Jangan panggil listModels (native) sebelum splash hilang — scan bisa memblokir WebView
+  // Sinkronkan model aplikasi biasa saja; pemindaian mendalam hanya lewat tombol Pindai.
   applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();
   setTimeout(() => {
     try { syncLocal(); renderModels(); renderSettings(); updateTop(); } catch (e) {}

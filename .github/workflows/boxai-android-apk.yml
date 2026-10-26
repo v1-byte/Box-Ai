@@ -89,7 +89,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_release)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: BoxAI-v2.2.29-apk
+          name: BoxAI-v2.2.30-apk
           path: BoxAI-Android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
@@ -110,10 +110,10 @@ jobs:
           body: |
             Release **${{ github.ref_name }}**
 
-            - Tombol Gunakan sekarang memuat model ke engine dan menampilkan error pemuatan yang jelas
-            - Profil context/thread adaptif untuk RAM; pemuatan GGUF diperiksa sebelum engine dijalankan
-            - UI Model menampilkan status dipilih, memuat, atau siap dipakai di Chat
-            - Pencarian HF menjelaskan bahwa yang dicari adalah repo model, bukan nama file kuantisasi
+            - Tab Terunduh menampilkan model yang ditemukan melalui pemindaian perangkat
+            - Pemindaian mendalam hanya berjalan saat tombol Pindai ditekan; izin penyimpanan tidak diminta otomatis saat startup
+            - Tombol gear pada kartu model membuka detail dan pengaturan model
+            - Versi aplikasi dinaikkan ke 2.2.30
 
             APK signed: **app-release.apk**. Instal sebagai pembaruan di atas Box AI yang sudah terpasang.
           fail_on_unmatched_files: true
