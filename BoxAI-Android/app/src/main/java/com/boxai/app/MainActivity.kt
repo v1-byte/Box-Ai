@@ -29,6 +29,9 @@ import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.webkit.JavascriptInterface
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.core.content.FileProvider
@@ -42,6 +45,12 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.SecretKey
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
@@ -50,6 +59,52 @@ import kotlinx.coroutines.sync.withLock
 import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
 import dev.ffmpegkit.llama.LlamaModel
+
+private class SecureSecrets(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("boxai_secure", Context.MODE_PRIVATE)
+    private val alias = "boxai_connector_key"
+
+    private fun key(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey(alias, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
+            init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setUserAuthenticationRequired(false)
+                .build())
+            generateKey()
+        }
+    }
+
+    @Synchronized fun get(name: String): String {
+        val raw = prefs.getString(name, null) ?: return ""
+        return runCatching {
+            val bytes = Base64.decode(raw, Base64.NO_WRAP)
+            val ivLength = ByteBuffer.wrap(bytes).int
+            val iv = ByteArray(ivLength); ByteBuffer.wrap(bytes, 4, ivLength).get(iv)
+            val ciphertext = bytes.copyOfRange(4 + ivLength, bytes.size)
+            Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
+            }.doFinal(ciphertext).toString(Charsets.UTF_8)
+        }.getOrDefault("")
+    }
+
+    @Synchronized fun put(name: String, value: String) {
+        if (value.isBlank()) { prefs.edit().remove(name).apply(); return }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val iv = cipher.iv
+        // Re-encrypt once so the ciphertext is exactly the bytes stored.
+        val ciphertext = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.ENCRYPT_MODE, key(), GCMParameterSpec(128, iv))
+        }.doFinal(value.toByteArray())
+        val out = ByteBuffer.allocate(4 + iv.size + ciphertext.size).putInt(iv.size).put(iv).put(ciphertext).array()
+        prefs.edit().putString(name, Base64.encodeToString(out, Base64.NO_WRAP)).apply()
+    }
+
+    fun remove(name: String) { prefs.edit().remove(name).apply() }
+}
 
 class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -169,14 +224,14 @@ class MainActivity : AppCompatActivity() {
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
+            allowFileAccess = false
+            allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             textZoom = 100
             cacheMode = WebSettings.LOAD_DEFAULT
             mediaPlaybackRequiresUserGesture = false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                safeBrowsingEnabled = false
+                safeBrowsingEnabled = true
             }
         }
 
@@ -222,7 +277,7 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                if (request.url.host == "appassets.androidplatform.net") return false
+                if (request.url.scheme == "https" && request.url.host == "appassets.androidplatform.net") return false
                 try { startActivity(Intent(Intent.ACTION_VIEW, request.url)) } catch (_: Exception) {}
                 return true
             }
@@ -273,12 +328,39 @@ class Bridge(
     private val post: (String) -> Unit
 ) {
     private val ctx: Context get() = activity
+    private val secrets = SecureSecrets(ctx)
     private val dm get() = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun dir(): File = (ctx.getExternalFilesDir("models") ?: File(ctx.filesDir, "models")).also { it.mkdirs() }
     private fun safe(n: String) = n.isNotBlank() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
+    private fun allowedHttps(raw: String, hosts: Set<String> = setOf("huggingface.co", "hf.co", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")): Boolean {
+        return runCatching {
+            val u = Uri.parse(raw)
+            u.scheme == "https" && u.host?.lowercase() in hosts && u.userInfo == null
+        }.getOrDefault(false)
+    }
+    private fun httpsUrl(raw: String): Boolean = runCatching {
+        val u = Uri.parse(raw)
+        u.scheme == "https" && !u.host.isNullOrBlank() && u.userInfo == null
+    }.getOrDefault(false)
 
     private fun clean(s: String) = s.replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&quot;", "\"")
         .replace("&#x27;", "'").replace("&lt;", "<").replace("&gt;", ">").trim()
+
+    private fun secretName(name: String): String? = when (name) {
+        "hf", "gh", "cf", "meta" -> name
+        else -> null
+    }
+
+    @JavascriptInterface fun getSecret(name: String): String =
+        secretName(name)?.let { secrets.get(it) } ?: ""
+
+    @JavascriptInterface fun setSecret(name: String, value: String) {
+        secretName(name)?.let { secrets.put(it, value.take(4096)) }
+    }
+
+    @JavascriptInterface fun clearSecret(name: String) {
+        secretName(name)?.let { secrets.remove(it) }
+    }
 
     @Volatile private var currentModel: LlamaModel? = null
     @Volatile private var currentModelPath: String? = null
@@ -711,39 +793,16 @@ class Bridge(
         return o.toString()
     }
 
-    /** Minta izin baca storage agar scan Download/folder lain bisa jalan. */
+    /** Akses file hanya melalui system folder picker (SAF). */
     @JavascriptInterface fun requestStoragePermission(): Boolean {
         return try {
-            if (Build.VERSION.SDK_INT >= 30) {
-                if (Environment.isExternalStorageManager()) return true
-                val i = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                i.data = Uri.parse("package:" + ctx.packageName)
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                ctx.startActivity(i)
-                false
-            } else if (Build.VERSION.SDK_INT >= 23) {
-                val ok = ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                    PackageManager.PERMISSION_GRANTED
-                if (!ok && ctx is android.app.Activity) {
-                    ActivityCompat.requestPermissions(
-                        ctx as android.app.Activity,
-                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-                        9911
-                    )
-                }
-                ok
-            } else true
+            activity.runOnUiThread { activity.openTreePicker() }
+            true
         } catch (_: Exception) { false }
     }
 
     @JavascriptInterface fun hasStoragePermission(): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
-            else if (Build.VERSION.SDK_INT >= 23)
-                ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                    PackageManager.PERMISSION_GRANTED
-            else true
-        } catch (_: Exception) { false }
+        return activity.treeUris().isNotEmpty()
     }
 
     /**
@@ -889,7 +948,7 @@ class Bridge(
             lastDlError = "nama file tidak valid"
             return -1L
         }
-        if (url.isBlank() || !(url.startsWith("http://") || url.startsWith("https://"))) {
+        if (!httpsUrl(url)) {
             lastDlError = "URL tidak valid"
             return -1L
         }
@@ -991,7 +1050,10 @@ class Bridge(
 
     /** Unduh APK update ke folder app. Return download id atau -1. */
     @JavascriptInterface fun downloadUpdate(url: String, fileName: String): Long {
-        val name = if (fileName.endsWith(".apk", true)) fileName else "BoxAI-update.apk"
+        if (!allowedHttps(url, setOf("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"))) return -1L
+        val rawName = fileName.substringAfterLast('/').substringAfterLast('\\')
+        if (!safe(rawName) || !rawName.endsWith(".apk", true)) return -1L
+        val name = rawName.take(120)
         val dest = File(updatesDir(), name)
         try { dest.delete() } catch (_: Exception) { }
         return try {
@@ -1031,6 +1093,15 @@ class Bridge(
             val file = File(updatesDir(), name)
             if (!file.exists() || file.length() < 1000) {
                 return JSONObject().put("ok", false).put("error", "File APK tidak ditemukan").toString()
+            }
+            if (file.length() > 150L * 1024L * 1024L) {
+                file.delete()
+                return JSONObject().put("ok", false).put("error", "APK terlalu besar").toString()
+            }
+            val archive = ctx.packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_META_DATA)
+            if (archive == null || archive.packageName != ctx.packageName) {
+                file.delete()
+                return JSONObject().put("ok", false).put("error", "Package APK tidak cocok").toString()
             }
             // Android 8+: pastikan boleh install dari sumber ini
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

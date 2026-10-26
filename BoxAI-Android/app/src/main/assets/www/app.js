@@ -27,9 +27,25 @@
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
+  const SECRET_FIELDS = { hfToken: 'hf', ghToken: 'gh', cfToken: 'cf', metaToken: 'meta' };
+  function loadSecureSecrets() {
+    if (!NATIVE || !NATIVE.getSecret) return;
+    Object.entries(SECRET_FIELDS).forEach(([field, key]) => {
+      try {
+        const nativeValue = NATIVE.getSecret(key) || '';
+        if (nativeValue) S[field] = nativeValue;
+        else if (S[field]) NATIVE.setSecret(key, S[field]); // one-time legacy migration
+      } catch (_) {}
+    });
+  }
+  loadSecureSecrets();
   const save = () => {
     try {
+      Object.entries(SECRET_FIELDS).forEach(([field, key]) => {
+        if (NATIVE && NATIVE.setSecret) NATIVE.setSecret(key, S[field] || '');
+      });
       const copy = JSON.parse(JSON.stringify(S));
+      Object.keys(SECRET_FIELDS).forEach(field => { delete copy[field]; });
       if (copy.chat) copy.chat.forEach(m => {
         if (m.img && String(m.img).length > 200000) m.img = undefined; // hemat storage
         if (m.fileText && String(m.fileText).length > 50000) m.fileText = String(m.fileText).slice(0, 50000);
@@ -37,6 +53,7 @@
       localStorage.setItem('boxai.v3', JSON.stringify(copy));
     } catch (e) {}
   };
+  save();
   const NONE = { id: '', name: 'Belum ada model', short: 'Belum ada model', meta: '', gb: 0, src: '', file: '' };
   const model = id => MODELS.find(m => m.id === id) || NONE;
   const fmtMB = mb => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB').replace('.', ',');

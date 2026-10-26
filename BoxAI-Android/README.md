@@ -6,8 +6,9 @@ File web ada di `app/src/main/assets/www`.
 
 ## Build APK
 - Android Studio: buka folder ini, tunggu Gradle sync, Build > Build APK(s).
-- GitHub Actions: push ke `main` atau buat Release → artifact `BoxAI-v*-apk`.
-- CLI (JDK 17, Android SDK, Gradle 8.9): `cd BoxAI-Android && gradle assembleDebug`
+- GitHub Actions: push ke `main` menghasilkan artifact; tag `v*` menerbitkan release setelah secret signing dikonfigurasi.
+- CLI (JDK 17, Android SDK): `cd BoxAI-Android && ./gradlew assembleDebug`
+- Release signing tidak disimpan di repository. Set `BOXAI_RELEASE_KEYSTORE`, `BOXAI_RELEASE_STORE_PASSWORD`, `BOXAI_RELEASE_KEY_ALIAS`, dan `BOXAI_RELEASE_KEY_PASSWORD` hanya di environment/CI secret.
 
 ## Fitur
 - **Models:** cari model GGUF di Hugging Face (tab Models > HF Hub), unduh nyata lewat DownloadManager. Token HF: Settings > Token Hugging Face.
@@ -17,12 +18,15 @@ File web ada di `app/src/main/assets/www`.
 - **Benchmark, Pembersih, Pencari file, Web search (DuckDuckGo).**
 
 ## UI / kompatibilitas HP (v2.2.0)
+- WebView memakai `WebViewAssetLoader`, CSP, Safe Browsing, dan tanpa akses `file://`.
+- Token connector disimpan AES-GCM Android Keystore, bukan localStorage.
+- Akses folder bersama memakai Storage Access Framework (SAF), tanpa `MANAGE_EXTERNAL_STORAGE`.
 - Edge-to-edge + `viewport-fit=cover`
 - Safe-area hanya di CSS (`env(safe-area-inset-*)`) — **tanpa double padding** native
 - Keyboard: native IME height → CSS `--kb` + sembunyikan tabbar
 - `100dvh`, overscroll terkunci, font 16px di input (anti-zoom iOS)
 - Cutout / notch / gesture nav didukung
-- Portrait preferred, largeHeap untuk model besar
+- Portrait preferred; model besar memakai folder app-scoped dan cleanup terkontrol
 
 ## Model disarankan
 | Model | Ukuran Q4 | Catatan |

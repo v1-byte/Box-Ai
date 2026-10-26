@@ -49,7 +49,7 @@ runs:
     # The digest is part of the key, so a cache entry written under a different
     # tarball can never be restored under this one.
     - name: Cache Hexagon SDK
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ~/.hexagon-sdk
         key: hexagon-sdk-${{ inputs.sdk-version }}-${{ inputs.sdk-sha256 }}

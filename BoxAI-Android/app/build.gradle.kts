@@ -9,10 +9,17 @@ android {
 
     signingConfigs {
         create("stable") {
-            storeFile = file("boxai-release.jks")
-            storePassword = "boxai123"
-            keyAlias = "boxai"
-            keyPassword = "boxai123"
+            val keystorePath = providers.environmentVariable("BOXAI_RELEASE_KEYSTORE").orNull
+            val storePass = providers.environmentVariable("BOXAI_RELEASE_STORE_PASSWORD").orNull
+            val keyAliasEnv = providers.environmentVariable("BOXAI_RELEASE_KEY_ALIAS").orNull
+            val keyPass = providers.environmentVariable("BOXAI_RELEASE_KEY_PASSWORD").orNull
+            if (!keystorePath.isNullOrBlank() && !storePass.isNullOrBlank() &&
+                !keyAliasEnv.isNullOrBlank() && !keyPass.isNullOrBlank()) {
+                storeFile = file(keystorePath)
+                storePassword = storePass
+                keyAlias = keyAliasEnv
+                keyPassword = keyPass
+            }
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
@@ -32,12 +39,13 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("stable")
         }
         release {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("stable")
+            if (signingConfigs.getByName("stable").storeFile != null) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }

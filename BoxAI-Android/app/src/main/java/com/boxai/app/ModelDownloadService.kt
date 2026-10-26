@@ -14,6 +14,7 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -63,14 +64,17 @@ class ModelDownloadService : Service() {
 
         fun openConn(url: String, token: String, range: String? = null): HttpURLConnection {
             val conn = URL(url).openConnection() as HttpURLConnection
-            conn.instanceFollowRedirects = true
+            conn.instanceFollowRedirects = false
             conn.connectTimeout = 30_000
             conn.readTimeout = 120_000
             conn.useCaches = false
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) BoxAI/2.2")
             conn.setRequestProperty("Accept", "*/*")
             conn.setRequestProperty("Accept-Encoding", "identity")
-            if (token.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $token")
+            val host = runCatching { URI(url).host?.lowercase() }.getOrNull()
+            if (token.isNotBlank() && host in setOf("huggingface.co", "hf.co", "github.com")) {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
             if (range != null) conn.setRequestProperty("Range", range)
             return conn
         }
@@ -86,7 +90,10 @@ class ModelDownloadService : Service() {
                     val code = c.responseCode
                     if (code in 300..399) {
                         val loc = c.getHeaderField("Location") ?: return current
-                        current = if (loc.startsWith("http")) loc else URL(URL(current), loc).toString()
+                        val next = if (loc.startsWith("http")) loc else URL(URL(current), loc).toString()
+                        val nextUri = runCatching { URI(next) }.getOrNull()
+                        if (nextUri?.scheme?.lowercase() != "https" || nextUri.host.isNullOrBlank()) return current
+                        current = next
                         c.disconnect()
                         return@repeat
                     }

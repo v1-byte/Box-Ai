@@ -1,2 +1,6 @@
-
-!app/boxai-release.jks
+# Local Android build artifacts
+.gradle/
+build/
+local.properties
+*.jks
+*.keystore
