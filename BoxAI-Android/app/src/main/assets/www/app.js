@@ -1303,6 +1303,7 @@
       toast('Pilih folder — saran: Internal storage atau Download / model ai');
       window.onBoxTreeGranted = function (ok) {
         if (!ok) return toast('Dibatalkan');
+        listDir.externalCacheAt = 0;
         toast('Akses folder tersimpan — memindai model…');
         setTimeout(() => ACTIONS.scanModels(), 400);
       };
@@ -1310,9 +1311,9 @@
     },
     async scanModels() {
       if (!NATIVE) return toast('Hanya di aplikasi Android');
-      // 1) All-files (system setting)
+      // 1) SAF folder access (least privilege)
       if (NATIVE.hasStoragePermission && !NATIVE.hasStoragePermission() && NATIVE.requestStoragePermission) {
-        toast('Izinkan akses semua file di pengaturan, lalu pindai lagi');
+        toast('Pilih folder penyimpanan, lalu pindai lagi');
         NATIVE.requestStoragePermission();
         return;
       }
@@ -1321,9 +1322,10 @@
       try { trees = NATIVE.treeAccessCount ? NATIVE.treeAccessCount() : 0; } catch (e) {}
       if (trees === 0 && NATIVE.requestTreeAccess) {
         toast('Pilih folder penyimpanan (seperti Acode) — pilih Internal storage atau Download');
-        window.onBoxTreeGranted = function (ok) {
-          if (!ok) return toast('Akses folder dibatalkan');
-          toast('Folder diizinkan — memindai…');
+          window.onBoxTreeGranted = function (ok) {
+            if (!ok) return toast('Akses folder dibatalkan');
+            listDir.externalCacheAt = 0;
+            toast('Folder diizinkan — memindai…');
           setTimeout(() => ACTIONS.scanModels(), 400);
         };
         NATIVE.requestTreeAccess();
@@ -1341,7 +1343,6 @@
         toast(n + ' model ditemukan');
       } else {
         const tips = [];
-        if (dbg.allFiles === false) tips.push('All files belum aktif');
         if ((dbg.treeAccess || 0) === 0) tips.push('belum pilih folder SAF');
         if (dbg.mediaStoreGguf === 0) tips.push('MediaStore 0 .gguf');
         tips.push('Settings → Pindai lagi, atau pilih folder Download/model ai');
@@ -1510,6 +1511,18 @@
   }
   function listDir(p) {
     const items = [];
+    if (p === ROOT) items.push({ path: ROOT + '/perangkat', name: 'Perangkat', type: 'dir', kind: 'dir', external: true });
+    if (p === ROOT + '/perangkat') {
+      let ext = [];
+      if (listDir.externalCache && Date.now() - listDir.externalCacheAt < 5000) ext = listDir.externalCache;
+      else try {
+        const raw = NATIVE && NATIVE.listWorkspaceFiles ? JSON.parse(NATIVE.listWorkspaceFiles() || '[]') : [];
+        ext = Array.isArray(raw) ? raw : [];
+        listDir.externalCache = ext; listDir.externalCacheAt = Date.now();
+      } catch (_) { listDir.externalCache = []; listDir.externalCacheAt = Date.now(); }
+      ext.forEach((f, i) => items.push({ path: ROOT + '/perangkat/file-' + i, name: f.name, type: 'file', kind: f.text ? kindOf(f.name) : 'file', size: +f.size || 0, mod: +f.mod || 0, external: true, uri: f.uri, text: !!f.text }));
+      return items.sort((a, b) => a.name.localeCompare(b.name, 'id', { numeric: true }));
+    }
     S.fsx.dirs.forEach(d => { if (d !== p && parent(d) === p) items.push({ path: d, name: base(d), type: 'dir', kind: 'dir' }); });
     Object.keys(S.fsx.files).forEach(f => {
       if (parent(f) === p) { const o = S.fsx.files[f]; items.push({ path: f, name: base(f), type: 'file', kind: kindOf(f), size: bytesOf(o.c), mod: o.m }); }
@@ -1568,7 +1581,18 @@
   function openEntry(ent) {
     if (ent.type === 'dir') { cwd = ent.path; $('#fSearch').value = ''; query = ''; renderFinder(); }
     else if (ent.kind === 'gguf') openGguf(ent.mid);
+    else if (ent.external) openExternalEditor(ent);
     else openEditor(ent);
+  }
+
+  function openExternalEditor(ent) {
+    if (!ent.text || !NATIVE || !NATIVE.readWorkspaceText) return toast('File biner tidak dapat diedit di editor teks');
+    let text = '';
+    try { text = NATIVE.readWorkspaceText(ent.uri) || ''; } catch (_) {}
+    if (!text && ent.size > 0) return toast('File tidak dapat dibaca atau terlalu besar');
+    ed = { path: ent.path, uri: ent.uri, external: true, orig: text, kind: ent.kind };
+    edText.value = text; $('#edTitle').textContent = ent.name; $('#edPath').textContent = 'Perangkat · ' + parent(ent.name);
+    $('#edFmt').hidden = ent.kind !== 'json'; edUpdate(); go('editor'); edText.scrollTop = 0;
   }
 
   function promptName(title, placeholder, value, okLabel) {
@@ -1687,7 +1711,10 @@
   });
   function edSave() {
     if (!edDirty()) return;
-    if (ed.mid) {
+    if (ed.external) {
+      if (!NATIVE || !NATIVE.writeWorkspaceText || !NATIVE.writeWorkspaceText(ed.uri, edText.value)) return toast('Gagal menyimpan file perangkat');
+      ed.orig = edText.value;
+    } else if (ed.mid) {
       let o;
       try { o = JSON.parse(edText.value); } catch (err) { return toast('JSON tidak valid: ' + String(err.message).slice(0, 60)); }
       const mt = meta(ed.mid);

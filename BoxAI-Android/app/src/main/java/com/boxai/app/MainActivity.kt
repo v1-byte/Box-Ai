@@ -762,7 +762,6 @@ class Bridge(
     @JavascriptInterface fun scanDebug(): String {
         val o = JSONObject()
         try {
-            o.put("allFiles", if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager() else true)
             o.put("sdk", Build.VERSION.SDK_INT)
             val roots = modelScanRoots()
             o.put("roots", roots.size)
@@ -818,6 +817,60 @@ class Bridge(
     }
 
     @JavascriptInterface fun treeAccessCount(): Int = activity.treeUris().size
+
+    /** Daftar file umum dari folder SAF, bergaya file explorer, dengan batas aman. */
+    @JavascriptInterface fun listWorkspaceFiles(): String {
+        val out = JSONArray()
+        val limit = 1500
+        val textExt = setOf("txt", "md", "json", "js", "ts", "tsx", "jsx", "kt", "java", "xml", "yaml", "yml", "css", "html", "csv", "log", "py", "sh", "gradle")
+        fun walk(dir: DocumentFile, depth: Int, relative: String) {
+            if (depth < 0 || out.length() >= limit) return
+            val kids = runCatching { dir.listFiles() }.getOrDefault(emptyArray())
+            for (f in kids) {
+                if (out.length() >= limit) break
+                val name = f.name ?: continue
+                if (name.startsWith(".") || name.equals("Android", true) || name.equals("cache", true)) continue
+                val rel = if (relative.isBlank()) name else "$relative/$name"
+                if (f.isDirectory) walk(f, depth - 1, rel) else if (f.isFile) {
+                    val ext = name.substringAfterLast('.', "").lowercase()
+                    // Include normal files; cap very large binaries to keep scan metadata-only.
+                    if (f.length() <= 512L * 1024L * 1024L) {
+                        out.put(JSONObject().put("uri", f.uri.toString()).put("name", rel)
+                            .put("size", f.length()).put("mod", f.lastModified()).put("text", ext in textExt))
+                    }
+                }
+            }
+        }
+        activity.treeUris().forEach { tree ->
+            if (out.length() < limit) DocumentFile.fromTreeUri(ctx, tree)?.let { walk(it, 6, "") }
+        }
+        return out.toString()
+    }
+
+    private fun isGrantedDocument(raw: String): Boolean = runCatching {
+        val uri = Uri.parse(raw)
+        activity.treeUris().any { raw.startsWith(it.toString()) } &&
+            uri.scheme == "content" && DocumentsContract.isDocumentUri(ctx, uri)
+    }.getOrDefault(false)
+
+    @JavascriptInterface fun readWorkspaceText(raw: String): String {
+        if (!isGrantedDocument(raw)) return ""
+        return runCatching {
+            val doc = DocumentFile.fromSingleUri(ctx, Uri.parse(raw)) ?: return ""
+            if (!doc.isFile || doc.length() > 2L * 1024L * 1024L) return ""
+            ctx.contentResolver.openInputStream(doc.uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+        }.getOrDefault("")
+    }
+
+    @JavascriptInterface fun writeWorkspaceText(raw: String, content: String): Boolean {
+        if (!isGrantedDocument(raw) || content.length > 2_000_000) return false
+        return runCatching {
+            val doc = DocumentFile.fromSingleUri(ctx, Uri.parse(raw)) ?: return false
+            if (!doc.isFile) return false
+            ctx.contentResolver.openOutputStream(doc.uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { it.write(content) }
+            true
+        }.getOrDefault(false)
+    }
 
     @JavascriptInterface fun clearTreeAccess(): Boolean {
         return try {
