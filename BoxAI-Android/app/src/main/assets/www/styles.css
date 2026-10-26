@@ -139,7 +139,11 @@ button { font-family: inherit; color: inherit; }
   display: grid; place-items: center; color: var(--bone); transition: background .15s, transform .15s;
 }
 .icon-btn:active { background: var(--panel-2); transform: scale(.92); }
-.thermal-btn { color: var(--ok); }
+.thermal-btn { color: var(--ok); position: relative; }
+.thermal-btn .ic { transition: filter .2s, transform .2s; }
+.thermal-badge { position: absolute; right: 1px; bottom: 2px; min-width: 17px; padding: 1px 3px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--edge); color: var(--mute); font-size: 7px; font-weight: 700; line-height: 10px; text-align: center; pointer-events: none; }
+.thermal-btn[data-pulse="1"] { background: rgba(61,220,151,.10); box-shadow: 0 0 0 5px rgba(61,220,151,.06); }
+.thermal-btn[data-pulse="1"] .ic { animation: fan-spin .85s linear infinite; filter: drop-shadow(0 0 6px rgba(61,220,151,.75)); }
 .thermal-btn[data-state="warm"] { color: #ffc857; }
 .thermal-btn[data-state="throttled"], .thermal-btn[data-state="paused"] { color: var(--bad); }
 .thermal-btn[data-state="throttled"] .ic { animation: fan-spin 1.4s linear infinite; }

@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.32';
+  const APP_VERSION = '2.2.33';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -27,7 +27,8 @@
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
-  let engineLoadingId = '', engineLoadedId = '';
+  let engineLoadingId = '', engineLoadedId = '', engineLoadTimer = 0;
+  const isProjectionFile = name => /[-_.]*mmproj[-_.].+\.gguf$/i.test(String(name || ''));
   try {
     const recommended = NATIVE && NATIVE.recommendedContext ? Number(NATIVE.recommendedContext()) : 0;
     if (recommended >= 512) S.ctx = Math.max(512, Math.min(Number(S.ctx) || DEFAULTS.ctx, recommended));
@@ -284,11 +285,15 @@
     generate(msgs) {
       return new Promise((res, rej) => {
         let buf = '';
+        const timeout = setTimeout(() => {
+          window.BoxEngine = null;
+          rej(new Error('Model terlalu lama merespons. Pastikan hanya satu model aktif dan RAM cukup.'));
+        }, 90000);
         const modelId = S.active;
         window.BoxEngine = {
           token: t => { buf += t; live(buf); },
-          done: () => res(buf),
-          error: m => rej(new Error(m))
+          done: () => { clearTimeout(timeout); res(buf); },
+          error: m => { clearTimeout(timeout); rej(new Error(m)); }
         };
         NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx }));
       });
@@ -298,6 +303,7 @@
     result(ok, name, message, modelId) {
       const id = modelId || S.active;
       if (id !== S.active) return;
+      clearTimeout(engineLoadTimer);
       engineLoadingId = '';
       engineLoadedId = ok ? id : '';
       renderModels();
@@ -739,7 +745,7 @@
     if (!Array.isArray(a)) a = [];
     const have = new Set();
     a.forEach(f => {
-      if (!f || !f.name) return;
+      if (!f || !f.name || isProjectionFile(f.name)) return;
       if ((f.size || 0) > 0 && f.size < 5 * 1048576) return; // skip < 5MB
       const id = modelId(f.name);
       have.add(id);
@@ -801,7 +807,7 @@
       const r = await fetch('https://huggingface.co/api/models/' + repo + '/tree/main', { headers: hfHead() });
       if (r.status === 401 || r.status === 403) return toast('Model gated. Isi token Hugging Face di Settings.');
       if (!r.ok) throw new Error(r.status);
-      files = (await r.json()).filter(f => f.type === 'file' && /\.gguf$/i.test(f.path)).sort((a, b) => a.size - b.size);
+      files = (await r.json()).filter(f => f.type === 'file' && /\.gguf$/i.test(f.path) && !isProjectionFile(f.path)).sort((a, b) => a.size - b.size);
     } catch (e) { return toast('Gagal membaca daftar file'); }
     if (!files.length) return toast('Repo ini tidak punya file GGUF');
     const v = await openSheet(`<h2>${esc(repo.split('/')[1] || repo)}</h2><p class="sub">Pilih kuantisasi. Q4_K_M biasanya seimbang.</p>` +
@@ -965,7 +971,7 @@
     if (act && engineLoadingId === m.id) {
       right = '<span class="tag"><i></i>Memuat…</span>';
     } else if (act && engineLoadedId === m.id) {
-      right = '<span class="tag ok"><i></i>Siap</span>';
+      right = '<button type="button" class="btn-use active-model" data-act="toggle" title="Matikan model">Aktif</button>';
     } else if (act) {
       right = '<button type="button" class="btn-use" data-act="use" title="Muat model ke engine">Muat</button>';
     } else if (has) {
@@ -1151,6 +1157,15 @@
     if (engineLoadedId === id) { go('chat'); return toast(model(id).short + ' sudah siap di Chat'); }
     S.active = id; save(); updateTop(); renderModels(); renderSettings();
     engineLoadingId = id; engineLoadedId = '';
+    clearTimeout(engineLoadTimer);
+    engineLoadTimer = setTimeout(() => {
+      if (engineLoadingId === id) {
+        engineLoadingId = '';
+        engineLoadedId = '';
+        renderModels(); renderSettings();
+        toast('Model gagal dimuat setelah 45 detik. Coba model lebih kecil atau tutup aplikasi lain.');
+      }
+    }, 45000);
     renderModels();
     try {
       if (NATIVE && NATIVE.preloadModel) {
@@ -1170,6 +1185,20 @@
       toast('Gagal mulai memuat model: ' + (e.message || e));
     }
   }
+  function toggleModel(id) {
+    if (S.active !== id) return useModel(id);
+    if (engineLoadingId === id) return toast('Model masih dimuat. Tunggu sampai selesai atau coba lagi.');
+    if (engineLoadedId === id) {
+      clearTimeout(engineLoadTimer);
+      if (NATIVE && NATIVE.unloadModel) NATIVE.unloadModel();
+      engineLoadedId = '';
+      engineLoadingId = '';
+      S.active = '';
+      save(); updateTop(); renderModels(); renderSettings();
+      return toast(model(id).short + ' dimatikan');
+    }
+    return useModel(id);
+  }
   async function modelSheet(id) {
     const m = model(id), has = !!S.dl[id], act = S.active === id;
     const modelStatus = act ? (engineLoadingId === id ? 'Memuat ke engine' : engineLoadedId === id ? 'Siap di Chat' : 'Dipilih · belum dimuat') : has ? ('Terunduh' + (m.src && m.src !== 'local' && m.src !== 'hub' ? ' · ' + m.src : '')) : dlProg[id] != null ? 'Mengunduh' : 'Belum diunduh';
@@ -1180,17 +1209,24 @@
       <div class="kv"><span>Status</span><span>${modelStatus}</span></div>
       ${!has ? '<button class="btn primary" data-v="dl">Unduh ' + fmtGB(m.gb) + '</button>' : ''}
       ${has && !act ? '<button class="btn primary" data-v="use">Gunakan model ini</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus dari perangkat</button>' : ''}
-      ${act ? '<button class="btn ghost" data-v="del">Hapus dari perangkat</button>' : ''}
+      ${act ? '<button class="btn ghost" data-v="toggle">Matikan model</button><button class="btn danger" data-v="del" style="margin-top:8px">Hapus file model</button>' : ''}
       ${has ? '<button class="btn ghost" data-v="files">Lihat file di Pencari</button>' : ''}
       <button class="btn ghost" data-close>Tutup</button>`,
       (el, close) => $$('[data-v]', el).forEach(b => b.addEventListener('click', () => close(b.dataset.v))));
     if (v === 'dl') startDownload(id);
     else if (v === 'files') { prevFinder = 'models'; cwd = ROOT + '/models'; go('finder'); }
     else if (v === 'use') useModel(id);
+    else if (v === 'toggle') toggleModel(id);
     else if (v === 'del') {
-      if (act) { toast('Model aktif tidak bisa dihapus. Pilih model lain dulu.'); return; }
       if (await confirmBox('Hapus ' + m.short + '?', 'File model ' + fmtGB(m.gb) + ' dihapus dari perangkat. Kamu bisa mengunduhnya lagi.', 'Hapus', true)) {
-        NATIVE && NATIVE.deleteModel(meta(id).file); syncLocal(); renderModels(); renderSettings(); toast(m.short + ' dihapus');
+        if (act && NATIVE && NATIVE.unloadModel) { NATIVE.unloadModel(); await sleep(350); }
+        const deleted = !NATIVE || !NATIVE.deleteModel || NATIVE.deleteModel(meta(id).file);
+        if (!deleted) return toast('File model tidak berhasil dihapus. Periksa izin penyimpanan.');
+        if (S.active === id) S.active = '';
+        delete S.dl[id]; delete S.mmeta[id];
+        const index = MODELS.findIndex(x => x.id === id); if (index >= 0) MODELS.splice(index, 1);
+        engineLoadingId = ''; engineLoadedId = '';
+        save(); syncLocal(); renderModels(); renderSettings(); toast(m.short + ' dihapus permanen');
       }
     }
   }
@@ -1199,6 +1235,7 @@
     const id = card.dataset.id, a = e.target.closest('[data-act]');
     if (!a) { modelSheet(id); return; }
     if (a.dataset.act === 'gear') return modelSheet(id);
+    if (a.dataset.act === 'toggle') return toggleModel(id);
     if (a.dataset.act === 'dl') return startDownload(id);
     if (a.dataset.act === 'pause') return pauseDownload(id);
     if (a.dataset.act === 'resume') return resumeDownload(id);
@@ -2078,16 +2115,21 @@
       if (tag && cmpVer(tag, cur) > 0) startInAppUpdate(false);
     } catch (e) {}
   }
-  let thermalSnapshot = {status: 0, label: 'normal', source: 'unavailable', batteryTempC: null, active: false};
+  let thermalSnapshot = {status: 0, label: 'normal', source: 'unavailable', batteryTempC: null, active: false, cpuBusy: 0, cpuTotal: 0, cpuPct: null, ramFree: 0, ramTotal: 0};
   let thermalWaiting = false;
+  let coolingPulse = false, previousCpu = null;
   const thermalStatusText = status => ['Normal', 'Ringan', 'Hangat', 'Panas', 'Kritis', 'Darurat', 'Shutdown'][Math.max(0, Math.min(6, status | 0))];
   function applyThermalState() {
     const button = $('#btnThermal');
     if (!button) return;
     const status = thermalSnapshot.status | 0;
     const state = thermalWaiting || status >= 4 ? 'paused' : status >= 3 ? 'throttled' : status >= 2 ? 'warm' : 'normal';
-    const label = thermalWaiting ? 'Menunggu suhu HP turun' : 'Perlindungan termal: ' + thermalStatusText(status);
+    const cpu = thermalSnapshot.cpuPct == null ? 'CPU —' : 'CPU ' + Math.round(thermalSnapshot.cpuPct) + '%';
+    const temp = thermalSnapshot.batteryTempC == null ? '' : ' · ' + Number(thermalSnapshot.batteryTempC).toFixed(0) + '°';
+    const label = thermalWaiting ? 'Menunggu suhu HP turun' : 'Pendingin perangkat: ' + cpu + temp;
     button.dataset.state = state;
+    button.dataset.pulse = coolingPulse ? '1' : '0';
+    const badge = $('#thermalBadge'); if (badge) badge.textContent = thermalSnapshot.cpuPct == null ? '—' : Math.round(thermalSnapshot.cpuPct) + '%';
     button.title = label;
     button.setAttribute('aria-label', label);
   }
@@ -2096,8 +2138,26 @@
       if (!NATIVE || !NATIVE.thermalInfo) return;
       const info = JSON.parse(NATIVE.thermalInfo() || '{}');
       thermalSnapshot = {...thermalSnapshot, ...info};
+      if (NATIVE.deviceStats) {
+        const stats = JSON.parse(NATIVE.deviceStats() || '{}');
+        if (previousCpu && stats.cpuTotal > previousCpu.total) {
+          const busy = stats.cpuBusy - previousCpu.busy;
+          const total = stats.cpuTotal - previousCpu.total;
+          thermalSnapshot.cpuPct = Math.max(0, Math.min(100, busy / total * 100));
+        }
+        previousCpu = {busy: Number(stats.cpuBusy) || 0, total: Number(stats.cpuTotal) || 0};
+        thermalSnapshot = {...thermalSnapshot, ramFree: stats.ramFree, ramTotal: stats.ramTotal, batteryTempC: stats.batteryTempC, status: stats.thermalStatus};
+      }
       applyThermalState();
     } catch (e) {}
+  }
+  function coolingPulseNow() {
+    if (coolingPulse || document.hidden) return;
+    coolingPulse = true;
+    applyThermalState();
+    try { if (NATIVE && NATIVE.coolDown) thermalSnapshot = {...thermalSnapshot, ...JSON.parse(NATIVE.coolDown() || '{}')}; } catch (e) {}
+    refreshThermalState();
+    setTimeout(() => { coolingPulse = false; applyThermalState(); }, 5000);
   }
   window.BoxThermal = {
     waiting(value) { thermalWaiting = !!value; applyThermalState(); },
@@ -2106,6 +2166,7 @@
     const status = thermalSnapshot.status | 0;
     const statusText = thermalWaiting ? 'Inferensi sedang ditahan sampai suhu turun.' : 'Status perangkat: ' + thermalStatusText(status) + '.';
     const details = thermalSnapshot.batteryTempC == null ? '' : `<p class="sub">Suhu baterai: ${Number(thermalSnapshot.batteryTempC).toFixed(1)} °C</p>`;
+    const ram = thermalSnapshot.ramTotal ? `<p class="sub">CPU: ${thermalSnapshot.cpuPct == null ? '—' : Math.round(thermalSnapshot.cpuPct) + '%'} · RAM bebas: ${fmtMB(thermalSnapshot.ramFree / 1048576)} dari ${fmtMB(thermalSnapshot.ramTotal / 1048576)}</p>` : '';
     const action = status >= 4 || thermalWaiting
       ? 'Box AI menunda permintaan baru sampai status termal membaik.'
       : status >= 3
@@ -2113,10 +2174,10 @@
         : status >= 2
           ? 'Box AI otomatis membatasi thread CPU dan konteks agar beban lebih rendah.'
           : 'Perlindungan aktif memantau status termal Android dan menyesuaikan beban model bila perangkat mulai panas.';
-    openSheet(`<h2>Perlindungan suhu otomatis</h2><p class="sub">${esc(statusText)}</p>${details}<p>${esc(action)}</p><p class="sub">Ini pengelolaan beban perangkat lunak, bukan kipas fisik. Aplikasi tidak dapat menyalakan pendingin eksternal.</p><button class="btn ghost" data-close>Tutup</button>`);
+    openSheet(`<h2>Pendingin perangkat</h2><p class="sub">${esc(statusText)}</p>${details}${ram}<p>${esc(action)}</p><p class="sub">Cooling pulse berjalan tiap 10 detik selama 5 detik. Aplikasi melakukan trim/GC ringan dan tidak mematikan model aktif.</p><button class="btn ghost" data-close>Tutup</button>`);
   });
   refreshThermalState();
-  setInterval(() => { if (!document.hidden) refreshThermalState(); }, 5000);
+  setInterval(() => { if (!document.hidden) { refreshThermalState(); coolingPulseNow(); } }, 10000);
   setTimeout(checkUpdateSilent, 2800);
   // Sinkronkan model aplikasi biasa saja; pemindaian mendalam hanya lewat tombol Pindai.
   applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();

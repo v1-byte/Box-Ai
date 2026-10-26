@@ -335,6 +335,8 @@ class Bridge(
     private val dm get() = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun dir(): File = (ctx.getExternalFilesDir("models") ?: File(ctx.filesDir, "models")).also { it.mkdirs() }
     private fun safe(n: String) = n.isNotBlank() && !n.contains('/') && !n.contains('\\') && n != "." && n != ".."
+    private fun isProjectionFile(name: String): Boolean =
+        Regex("[-_.]*mmproj[-_.].+\\.gguf$", RegexOption.IGNORE_CASE).matches(name)
     private fun allowedHttps(raw: String, hosts: Set<String> = setOf("huggingface.co", "hf.co", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")): Boolean {
         return runCatching {
             val u = Uri.parse(raw)
@@ -411,6 +413,44 @@ class Bridge(
             .toString()
     }
 
+    private fun cpuSnapshot(): Pair<Long, Long> {
+        return try {
+            val fields = File("/proc/stat").useLines { lines ->
+                lines.firstOrNull { it.startsWith("cpu ") }?.trim()?.split(Regex("\\s+")) ?: emptyList()
+            }
+            if (fields.size < 5) return 0L to 0L
+            val values = fields.drop(1).mapNotNull { it.toLongOrNull() }
+            val total = values.sum()
+            val idle = (values.getOrNull(3) ?: 0L) + (values.getOrNull(4) ?: 0L)
+            (total - idle).coerceAtLeast(0L) to total.coerceAtLeast(0L)
+        } catch (_: Exception) { 0L to 0L }
+    }
+
+    @JavascriptInterface fun deviceStats(): String {
+        val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memory = ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(memory)
+        val cpu = cpuSnapshot()
+        val reading = thermalReading()
+        return JSONObject()
+            .put("cpuBusy", cpu.first)
+            .put("cpuTotal", cpu.second)
+            .put("ramFree", memory.availMem)
+            .put("ramTotal", memory.totalMem)
+            .put("thermalStatus", reading.status)
+            .put("batteryTempC", reading.batteryTempC ?: JSONObject.NULL)
+            .toString()
+    }
+
+    /** Cooling pass: request Android/runtime cleanup without unloading the active LLM. */
+    @JavascriptInterface fun coolDown(): String {
+        return try {
+            System.gc()
+            if (currentModel == null) System.runFinalization()
+            deviceStats()
+        } catch (_: Exception) { deviceStats() }
+    }
+
     private fun runtimeLimits(requestedContext: Int): RuntimeLimits {
         val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memory = ActivityManager.MemoryInfo()
@@ -457,6 +497,7 @@ class Bridge(
         } else {
             if (!safe(modelName)) null else File(dir(), modelName)
         } ?: return null
+        if (isProjectionFile(file.name)) return null
         if (!file.isFile || !file.name.endsWith(".gguf", true) || file.length() < 5L * 1024L * 1024L) return null
         val validHeader = try {
             file.inputStream().use { input ->
@@ -760,6 +801,7 @@ class Bridge(
         for (f in list) {
             try {
                 if (f.isFile && f.length() > 1024) {
+                    if (isProjectionFile(f.name)) continue
                     val fixed = when {
                         f.name.endsWith(".gguf", true) -> f
                         looksLikeTruncatedGguf(f.name) -> fixTruncatedGguf(f)
@@ -842,6 +884,7 @@ class Bridge(
                 while (c.moveToNext()) {
                     val name = if (iName >= 0) c.getString(iName) ?: continue else continue
                     if (!name.endsWith(".gguf", true)) continue
+                    if (isProjectionFile(name)) continue
                     val size = if (iSize >= 0) c.getLong(iSize) else 0L
                     if (size > 0 && size < 5L * 1024L * 1024L) continue
                     val path = if (iData >= 0) c.getString(iData) else null
@@ -1226,7 +1269,35 @@ class Bridge(
         ctx.startService(dlIntent(ModelDownloadService.ACTION_CANCEL, id))
     }
 
-    @JavascriptInterface fun deleteModel(name: String): Boolean = safe(name) && File(dir(), name).delete()
+    @JavascriptInterface fun deleteModel(name: String): Boolean {
+        val candidate = if (safe(name)) {
+            File(dir(), name)
+        } else if (name.startsWith("/")) {
+            File(name)
+        } else return false
+
+        val target = runCatching { candidate.canonicalFile }.getOrNull() ?: return false
+        val internalRoot = runCatching { dir().canonicalFile }.getOrNull() ?: return false
+        val externalRoot = runCatching { Environment.getExternalStorageDirectory().canonicalFile }.getOrNull()
+        val allowed = target.path == internalRoot.path || target.path.startsWith(internalRoot.path + File.separator) ||
+            (externalRoot != null && (target.path == externalRoot.path || target.path.startsWith(externalRoot.path + File.separator)))
+        if (!allowed || !target.isFile) return false
+
+        engineLock.tryLock().let { locked ->
+            if (locked) {
+                try {
+                    if (currentModelPath == target.absolutePath) {
+                        currentModel?.let { runCatching { Llama.releaseModel(it) } }
+                        currentModel = null
+                        currentModelPath = null
+                        currentModelConfigKey = null
+                    }
+                    return target.delete()
+                } finally { engineLock.unlock() }
+            }
+            return false
+        }
+    }
     @JavascriptInterface fun renameModel(old: String, new: String): Boolean =
         safe(old) && safe(new) && !File(dir(), new).exists() && File(dir(), old).renameTo(File(dir(), new))
 
