@@ -117,6 +117,9 @@ class BoxNativeBridge(
                         if (System.currentTimeMillis() - last >= 40 || buf.length > 96) flush()
                         return true
                     }
+                    override fun onProgress(percent: Int) {
+                        js("window.BoxEngine&&window.BoxEngine.progress&&window.BoxEngine.progress($percent)")
+                    }
                     override fun onDone() { flush(); js("window.BoxEngine&&window.BoxEngine.done&&window.BoxEngine.done()") }
                     override fun onError(message: String) { flush(); jsError(message) }
                 })

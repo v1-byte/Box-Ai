@@ -2,7 +2,7 @@
 
 UI Box AI berjalan di dalam `WebView` Android dan berbicara dengan sisi native (Kotlin) lewat objek global
 `window.BoxNative` yang didaftarkan dengan `addJavascriptInterface`. Dokumen ini **disusun dari cara `app.js`
-memanggilnya** (v2.2.37); bentuk argumen dan nilai balik di bawah adalah apa yang UI harapkan, bukan salinan
+memanggilnya** (v2.2.38); bentuk argumen dan nilai balik di bawah adalah apa yang UI harapkan, bukan salinan
 kode Kotlin-nya.
 
 > Jika `window.BoxNative` tidak ada (mis. dibuka di browser desktop), UI tetap tampil tetapi fitur yang

@@ -12,6 +12,7 @@ class LlamaEngine {
     interface Listener {
         /** Kembalikan false untuk menghentikan generasi. */
         fun onToken(text: String): Boolean
+        fun onProgress(percent: Int) {}
         fun onDone()
         fun onError(message: String)
     }
@@ -83,6 +84,10 @@ class LlamaEngine {
                 fun onToken(bytes: ByteArray): Boolean {
                     if (generation.get() != myGen) return false
                     return listener.onToken(String(bytes, Charsets.UTF_8))
+                }
+                @Suppress("unused")
+                fun onProgress(percent: Int) {
+                    if (generation.get() == myGen) listener.onProgress(percent.coerceIn(0, 100))
                 }
             }
             val err = try {

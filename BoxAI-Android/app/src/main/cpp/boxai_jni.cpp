@@ -100,7 +100,8 @@ Java_com_boxai_app_LlamaEngine_nativeGenerate(JNIEnv *env, jobject, jobjectArray
 
     jclass sinkCls = env->GetObjectClass(sink);
     jmethodID onToken = env->GetMethodID(sinkCls, "onToken", "([B)Z");
-    if (!onToken) return env->NewStringUTF("Callback tidak valid");
+    jmethodID onProgress = env->GetMethodID(sinkCls, "onProgress", "(I)V");
+    if (!onToken || !onProgress) return env->NewStringUTF("Callback tidak valid");
 
     const llama_vocab *vocab = llama_model_get_vocab(g_model);
 
@@ -153,6 +154,8 @@ Java_com_boxai_app_LlamaEngine_nativeGenerate(JNIEnv *env, jobject, jobjectArray
     cp.n_batch = (uint32_t) (ctx_len < 512 ? ctx_len : 512);
     cp.n_threads = nThreads < 1 ? 1 : nThreads;
     cp.n_threads_batch = cp.n_threads;
+    env->CallVoidMethod(sink, onProgress, (jint) 0);
+    if (env->ExceptionCheck()) env->ExceptionClear();
     llama_context *ctx = llama_init_from_model(g_model, cp);
     if (!ctx) return env->NewStringUTF("Konteks gagal dibuat (RAM tidak cukup?). Turunkan ukuran konteks.");
 
@@ -176,6 +179,8 @@ Java_com_boxai_app_LlamaEngine_nativeGenerate(JNIEnv *env, jobject, jobjectArray
         llama_batch b = llama_batch_get_one(toks.data() + pos, chunk);
         if (llama_decode(ctx, b) != 0) { err = "Gagal memproses prompt"; break; }
         pos += chunk;
+        env->CallVoidMethod(sink, onProgress, (jint) ((pos * 100) / n_tok));
+        if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
     // ---- generasi ----

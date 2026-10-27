@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.37';
+  const APP_VERSION = '2.2.38';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -307,18 +307,21 @@
     ok: () => !!(NATIVE && NATIVE.engineAvailable && NATIVE.engineAvailable()),
     generate(msgs) {
       return new Promise((res, rej) => {
-        let buf = '', timeout = 0;
+        let buf = '', timeout = 0, promptProgress = null;
         const clearTimer = () => { if (timeout) clearTimeout(timeout); timeout = 0; };
         const armTimeout = () => {
           clearTimer();
           timeout = setTimeout(() => {
             if (window.BoxEngine !== handler) return;
             window.BoxEngine = null;
-            rej(new Error('Model tidak menghasilkan progres selama 3 menit. Coba model lebih ringan atau kurangi panjang konteks.'));
+            try { if (NATIVE && NATIVE.stopGeneration) NATIVE.stopGeneration(); } catch (_) {}
+            const stage = promptProgress === null ? 'Belum ada progres evaluasi prompt.' : 'Evaluasi prompt terakhir: ' + promptProgress + '%.';
+            rej(new Error('Model tidak mengirim token selama 3 menit; proses dihentikan. ' + stage + ' Coba mulai chat baru atau kurangi panjang konteks.'));
           }, 180000);
         };
         const modelId = S.active;
         const handler = {
+          progress: p => { promptProgress = Math.max(0, Math.min(100, Number(p) || 0)); live('Memproses konteks… ' + promptProgress + '%'); armTimeout(); },
           token: t => { buf += t; live(buf); armTimeout(); },
           done: () => { clearTimer(); if (window.BoxEngine === handler) window.BoxEngine = null; res(buf); },
           error: m => { clearTimer(); if (window.BoxEngine === handler) window.BoxEngine = null; rej(new Error(m)); }
