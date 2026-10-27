@@ -40,6 +40,8 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
 
       - name: Pasang SDK/NDK/CMake yang dipatok
         run: |
@@ -88,6 +90,8 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
       - uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
       - name: Pasang SDK/NDK/CMake
         run: |
           yes | sdkmanager --licenses > /dev/null || true
