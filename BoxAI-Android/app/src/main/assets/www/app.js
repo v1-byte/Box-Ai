@@ -284,22 +284,46 @@
     const code = $('code', b.parentNode).textContent;
     (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast('Kode disalin'), () => toast('Gagal menyalin'));
   });
+  let replyQueue = [], replyRunning = false;
+  async function drainReplyQueue() {
+    if (replyRunning) return;
+    replyRunning = true;
+    try {
+      while (replyQueue.length) {
+        const next = replyQueue.shift();
+        try { await reply(next); }
+        catch (e) { pushAi('<p>Gagal membuat jawaban: ' + esc(e && e.message ? e.message : 'Kesalahan tidak diketahui') + '</p>'); }
+      }
+    } finally {
+      replyRunning = false;
+      if (replyQueue.length) drainReplyQueue();
+    }
+  }
+  function enqueueReply(text) { replyQueue.push(text); drainReplyQueue(); }
   const Engine = {
     ok: () => !!(NATIVE && NATIVE.engineAvailable && NATIVE.engineAvailable()),
     generate(msgs) {
       return new Promise((res, rej) => {
-        let buf = '';
-        const timeout = setTimeout(() => {
-          window.BoxEngine = null;
-          rej(new Error('Model terlalu lama merespons. Pastikan hanya satu model aktif dan RAM cukup.'));
-        }, 90000);
-        const modelId = S.active;
-        window.BoxEngine = {
-          token: t => { buf += t; live(buf); },
-          done: () => { clearTimeout(timeout); res(buf); },
-          error: m => { clearTimeout(timeout); rej(new Error(m)); }
+        let buf = '', timeout = 0;
+        const clearTimer = () => { if (timeout) clearTimeout(timeout); timeout = 0; };
+        const armTimeout = () => {
+          clearTimer();
+          timeout = setTimeout(() => {
+            if (window.BoxEngine !== handler) return;
+            window.BoxEngine = null;
+            rej(new Error('Model tidak menghasilkan progres selama 3 menit. Coba model lebih ringan atau kurangi panjang konteks.'));
+          }, 180000);
         };
-        NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx }));
+        const modelId = S.active;
+        const handler = {
+          token: t => { buf += t; live(buf); armTimeout(); },
+          done: () => { clearTimer(); if (window.BoxEngine === handler) window.BoxEngine = null; res(buf); },
+          error: m => { clearTimer(); if (window.BoxEngine === handler) window.BoxEngine = null; rej(new Error(m)); }
+        };
+        window.BoxEngine = handler;
+        armTimeout();
+        try { NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx })); }
+        catch (e) { clearTimer(); if (window.BoxEngine === handler) window.BoxEngine = null; rej(e); }
       });
     }
   };
@@ -389,7 +413,7 @@
     input.value = ''; sendBtn.classList.remove('ready'); clearAttachment();
     save(); renderChat();
     const us = $$('.row.user', messages), last = us[us.length - 1]; last && last.classList.add('pop');
-    reply(text || msg.t);
+    enqueueReply(text || msg.t);
   }
   sendBtn.addEventListener('click', send);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
