@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.36';
+  const APP_VERSION = '2.2.37';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -216,11 +216,17 @@
 
   /* ================= CHAT ================= */
   const messages = $('#messages'), input = $('#composerInput'), sendBtn = $('#btnSend');
-  let attachment = null;
+  let attachment = null, replyQueue = [], replyRunning = false;
   const subText = () => (S.pal ? (allPals().find(p => p.id === S.pal) || {}).name + ' · ' : '') + model(S.active).short + ' · ' + (S.onDevice ? 'On-device' : 'Online') + (S.web ? ' + Web' : '');
   function updateTop() { $('#chatSub').textContent = subText(); }
   function aiRow(inner) {
     return `<div class="row ai"><img src="assets/logo-64.webp" class="av" alt="" width="30" height="30" /><div class="bubble">${inner}</div></div>`;
+  }
+  function userRow(m, queued) {
+    let extra = '';
+    if (m.img) extra += `<div class="file-bubble img"><img src="${m.img}" alt="${esc(m.f || '')}" /></div>`;
+    else if (m.f) extra += `<div class="file-bubble">${ic('file')}${esc(m.f)}</div>`;
+    return `<div class="row user${queued ? ' queued' : ''}"><div class="bubble">${queued ? '<span class="muted-line">Menunggu balasan sebelumnya…</span><br>' : ''}${extra}${esc(m.t)}</div></div>`;
   }
   function renderChat() {
     let h = '<div class="day-sep"><span>Hari ini</span></div>';
@@ -231,14 +237,10 @@
     } else {
       S.chat.forEach(m => {
         if (m.r === 'ai') h += aiRow(m.h);
-        else {
-          let extra = '';
-          if (m.img) extra += `<div class="file-bubble img"><img src="${m.img}" alt="${esc(m.f || '')}" /></div>`;
-          else if (m.f) extra += `<div class="file-bubble">${ic('file')}${esc(m.f)}</div>`;
-          h += `<div class="row user"><div class="bubble">${extra}${esc(m.t)}</div></div>`;
-        }
+        else h += userRow(m, false);
       });
     }
+    replyQueue.forEach(item => { h += userRow(item.msg, true); });
     if (S.typing && S.chat.length) h += `<div class="row ai" id="typingRow"><img src="assets/logo-64.webp" class="av" alt="" width="30" height="30" /><div class="bubble typing" aria-label="Sedang mengetik"><i></i><i></i><i></i></div></div>`;
     messages.innerHTML = h;
     $$('.suggest button', messages).forEach(b => b.addEventListener('click', () => { input.value = b.textContent + ': '; input.focus(); sendBtn.classList.add('ready'); }));
@@ -284,14 +286,15 @@
     const code = $('code', b.parentNode).textContent;
     (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast('Kode disalin'), () => toast('Gagal menyalin'));
   });
-  let replyQueue = [], replyRunning = false;
   async function drainReplyQueue() {
     if (replyRunning) return;
     replyRunning = true;
     try {
       while (replyQueue.length) {
         const next = replyQueue.shift();
-        try { await reply(next); }
+        S.chat.push(next.msg);
+        save(); renderChat();
+        try { await reply(next.text); }
         catch (e) { pushAi('<p>Gagal membuat jawaban: ' + esc(e && e.message ? e.message : 'Kesalahan tidak diketahui') + '</p>'); }
       }
     } finally {
@@ -299,7 +302,7 @@
       if (replyQueue.length) drainReplyQueue();
     }
   }
-  function enqueueReply(text) { replyQueue.push(text); drainReplyQueue(); }
+  function enqueueReply(msg, text) { replyQueue.push({ msg, text }); renderChat(); drainReplyQueue(); }
   const Engine = {
     ok: () => !!(NATIVE && NATIVE.engineAvailable && NATIVE.engineAvailable()),
     generate(msgs) {
@@ -409,18 +412,17 @@
       if (att.kind === 'image' && att.dataUrl) msg.img = att.dataUrl;
       if (att.text) msg.fileText = att.text;
     }
-    S.chat.push(msg);
     input.value = ''; sendBtn.classList.remove('ready'); clearAttachment();
-    save(); renderChat();
+    save();
+    enqueueReply(msg, text || msg.t);
     const us = $$('.row.user', messages), last = us[us.length - 1]; last && last.classList.add('pop');
-    enqueueReply(text || msg.t);
   }
   sendBtn.addEventListener('click', send);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
   input.addEventListener('input', () => sendBtn.classList.toggle('ready', input.value.trim().length > 0 || !!attachment));
 
   function newChat(silent) {
-    S.chat = []; S.typing = false; save(); renderChat(); clearAttachment();
+    S.chat = []; replyQueue = []; S.typing = false; save(); renderChat(); clearAttachment();
     if (!silent) toast('Chat baru dimulai');
   }
   $('#btnNew').addEventListener('click', async () => {
