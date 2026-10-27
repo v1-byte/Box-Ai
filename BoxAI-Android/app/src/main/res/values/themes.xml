@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BoxAI" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/boxai_bg</item>
+        <item name="android:statusBarColor">@color/boxai_bg</item>
+        <item name="android:navigationBarColor">@color/boxai_bg</item>
+        <item name="android:colorBackground">@color/boxai_bg</item>
+    </style>
+</resources>
