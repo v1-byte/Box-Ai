@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#08090C" />
+  <meta name="color-scheme" content="dark light" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <title>Box AI</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="assets/logo-64.webp" />
+</head>
+<body>
+
+<!-- SVG sprite ikon -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h16"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.4H19l-4.4 3.2 1.7 5.4L12 14.8 7.7 17l1.7-5.4L5 8.4h5.2L12 3z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6L13 3z"/></symbol>
+
+    <symbol id="i-clean" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.9L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4.5 4.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6M20 4v7h-7"/></symbol>
+    <symbol id="i-cooler" viewBox="0 0 24 24"><path d="M12 12c-1.1-3.8.1-7.7 2.2-7.7 1.6 0 2.1 2.1 1.1 4.2-.7 1.4-1.8 2.4-3.3 3.5zM12 12c3.8-1.1 7.7.1 7.7 2.2 0 1.6-2.1 2.1-4.2 1.1-1.4-.7-2.4-1.8-3.5-3.3zM12 12c1.1 3.8-.1 7.7-2.2 7.7-1.6 0-2.1-2.1-1.1-4.2.7-1.4 1.8-2.4 3.3-3.5zM12 12c-3.8 1.1-7.7-.1-7.7-2.2 0-1.6 2.1-2.1 4.2-1.1 1.4.7 2.4 1.8 3.5 3.3z"/><circle cx="12" cy="12" r="1.3"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/></symbol>
+
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2.2.9z"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2.2.9a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 4 5.7 4 9s-1.4 6.3-4 9c-2.6-2.7-4-5.7-4-9s1.4-6.3 4-9z"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2.2.9a2 2 0 0 1 2-2h4"/></symbol>
+  </defs>
+</svg>
+
+<!-- SPLASH -->
+<div id="splash" aria-hidden="true">
+  <div class="stage">
+    <div class="cube">
+      <i class="f front"></i><i class="f back"></i><i class="f right"></i>
+      <i class="f left"></i><i class="f top"></i><i class="f bottom"></i>
+    </div>
+  </div>
+  <div class="brand">Box<span>AI</span></div>
+  <div class="boot"><b id="bootBar"></b></div>
+  <div class="boot-text" id="bootText">Menyiapkan mesin on-device</div>
+</div>
+
+<div id="app">
+
+  <!-- CHAT -->
+  <section id="screen-chat" class="screen active" data-nav="chat">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="btnMenu" aria-label="Menu"><svg class="ic"><use href="#i-menu"/></svg></button>
+      <div class="topbar-center">
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
+        <div class="titles">
+          <div class="topbar-title" id="chatTitle">Box AI</div>
+          <div class="topbar-sub"><i class="dot"></i><span id="chatSub">Gemma 2 2B · On-device</span></div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="btnNew" aria-label="Chat baru"><svg class="ic"><use href="#i-edit"/></svg></button>
+      <button type="button" class="icon-btn thermal-btn" id="btnThermal" data-state="normal" data-pulse="0" aria-label="Pendingin perangkat" title="Pendingin perangkat"><svg class="ic"><use href="#i-cooler"/></svg><span class="thermal-badge" id="thermalBadge">—</span></button>
+    </header>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="attach-chip" id="attachChip" hidden></div>
+    <footer class="composer">
+      <button type="button" class="icon-btn attach" id="btnAttach" aria-label="Lampirkan"><svg class="ic"><use href="#i-plus"/></svg></button>
+      <button type="button" class="icon-btn web" id="btnWeb" aria-label="Pencarian web" aria-pressed="false"><svg class="ic"><use href="#i-globe"/></svg></button>
+      <input type="file" id="fileInput" hidden />
+      <input id="composerInput" type="text" placeholder="Tulis pesan ke Box AI" autocomplete="off" />
+      <button type="button" class="send" id="btnSend" aria-label="Kirim"><svg class="ic"><use href="#i-send"/></svg></button>
+    </footer>
+  </section>
+
+  <!-- MODELS -->
+  <section id="screen-models" class="screen" data-nav="models" data-skeleton>
+    <header class="topbar">
+      <div class="topbar-center single">
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
+        <div class="topbar-title">Model</div>
+      </div>
+      <button type="button" class="icon-btn" id="btnModelMenu" aria-label="Opsi"><svg class="ic"><use href="#i-more"/></svg></button>
+    </header>
+    <div class="scroll">
+      <label class="search" id="hfBox" hidden><svg class="ic"><use href="#i-search"/></svg><input id="hfq" type="search" placeholder="Cari nama repo HF, bukan nama file (mis. owner/model)" autocomplete="off" /></label>
+      <label class="search" id="connBox" hidden><svg class="ic"><use href="#i-search"/></svg><input id="connUrl" type="url" placeholder="URL Cloudflared / R2 (…/ atau …/manifest.json)" autocomplete="off" /></label>
+      <div class="chips">
+        <button type="button" class="chip active" data-f="all">Semua</button>
+        <button type="button" class="chip" data-f="dl">Terunduh</button>
+        <button type="button" class="chip" data-f="hub">HF Hub</button>
+        <button type="button" class="chip" data-f="gh">GitHub</button>
+        <button type="button" class="chip" data-f="cf">Cloudflare</button>
+        <button type="button" class="chip" data-f="r2">R2</button>
+      </div>
+
+      <div id="dlPanel" class="dl-panel" hidden></div>
+
+      <button type="button" class="btn ghost" id="btnScanModels" hidden style="width:calc(100% - 24px);margin:8px 12px" aria-label="Pindai model di perangkat">Pindai model di perangkat</button>
+
+      <div class="skel-wrap">
+        <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
+      </div>
+
+      <div class="real" id="modelList"></div>
+      <div class="real" id="hubList" hidden></div>
+    </div>
+  </section>
+
+  <!-- PALS -->
+  <section id="screen-pals" class="screen" data-nav="pals" data-skeleton>
+    <header class="topbar">
+      <div class="topbar-center single">
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
+        <div class="topbar-title">Pals</div>
+      </div>
+      <button type="button" class="icon-btn" id="btnAddPal" aria-label="Tambah Pal"><svg class="ic"><use href="#i-plus"/></svg></button>
+    </header>
+    <div class="scroll">
+      <p class="lead">Asisten khusus dengan system prompt, tools, serta vision dan suara bila didukung.</p>
+      <div class="skel-wrap">
+        <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
+      </div>
+      <div class="real" id="palList"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="screen-settings" class="screen" data-nav="settings">
+    <header class="topbar">
+      <div class="topbar-center single">
+        <img src="assets/logo-64.webp" alt="" class="topbar-logo" width="30" height="30" />
+        <div class="topbar-title">Pengaturan</div>
+      </div>
+    </header>
+    <div class="scroll">
+      <button type="button" class="clean-card" id="goClean">
+        <span class="s-ico"><svg class="ic"><use href="#i-clean"/></svg></span>
+        <span class="cc-txt"><strong>Pembersih penyimpanan</strong><span id="cleanHint">Pindai cache, file sementara, dan model</span></span>
+        <svg class="ic chev"><use href="#i-chev"/></svg>
+      </button>
+
+      <button type="button" class="clean-card alt" id="goFinder">
+        <span class="s-ico"><svg class="ic"><use href="#i-folder"/></svg></span>
+        <span class="cc-txt"><strong>Penjelajah file</strong><span id="finderHint">Jelajahi file dan folder model</span></span>
+        <svg class="ic chev"><use href="#i-chev"/></svg>
+      </button>
+
+      <h3 class="section-h">Aplikasi</h3>
+      <div class="list">
+        <div class="li link" data-set="theme"><span>Tema</span><span class="val" id="v-theme"></span></div>
+        <div class="li link" data-set="accent"><span>Warna aksen</span><span class="val" id="v-accent"></span></div>
+        <div class="li link" data-set="lang"><span>Bahasa</span><span class="val" id="v-lang"></span></div>
+        <div class="li"><span>Umpan balik getar</span><label class="sw"><input type="checkbox" id="swHaptics" /><i></i></label></div>
+      </div>
+      <h3 class="section-h">Generasi</h3>
+      <div class="list">
+        <div class="li link" data-set="model"><span>Model default</span><span class="val" id="v-model"></span></div>
+        <div class="li link" data-set="temp"><span>Temperature</span><span class="val" id="v-temp"></span></div>
+        <div class="li link" data-set="topp"><span>Top-p</span><span class="val" id="v-topp"></span></div>
+        <div class="li link" data-set="maxTok"><span>Max tokens</span><span class="val" id="v-maxTok"></span></div>
+        <div class="li link" data-set="ctx"><span>Ukuran konteks</span><span class="val" id="v-ctx"></span></div>
+        <div class="li link" data-set="sysPrompt"><span>System prompt</span><span class="val" id="v-sys"></span></div>
+      </div>
+      <h3 class="section-h">Alat</h3>
+      <div class="list">
+        <div class="li link" data-set="hfToken"><span>Token Hugging Face</span><span class="val" id="v-hf"></span></div>
+        <div class="li link" data-set="ghRepo"><span>GitHub repo model</span><span class="val" id="v-gh"></span></div>
+        <div class="li link" data-set="ghToken"><span>GitHub token (opsional)</span><span class="val" id="v-ght"></span></div>
+        <div class="li link" data-set="cfUrl"><span>Cloudflare tunnel URL</span><span class="val" id="v-cf"></span></div>
+        <div class="li link" data-set="r2Url"><span>R2 / public URL</span><span class="val" id="v-r2"></span></div>
+        <div class="li link" data-set="talents"><span>Talents</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-go="bench"><span>Benchmark</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+      </div>
+      <h3 class="section-h">Privasi</h3>
+      <div class="list">
+        <div class="li link" data-set="onDevice"><span>Hanya on-device</span><span class="badge" id="v-onDevice">ON</span></div>
+        <div class="li link" data-set="clearChat"><span>Hapus riwayat chat</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-set="clearCache"><span>Hapus cache model</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+      </div>
+      <h3 class="section-h">Tentang</h3>
+      <div class="list">
+        <div class="li link" data-go="about"><span>Tentang Box AI</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-set="license"><span>Lisensi</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-set="requestTree"><span>Akses folder penyimpanan</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-set="scanModels"><span>Pindai model di perangkat</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
+        <div class="li link" data-set="version"><span>Versi / Cek update</span><span class="val" id="v-appVer">2.2.34</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PENCARI -->
+  <section id="screen-finder" class="screen">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="fBack" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="topbar-title pad" style="flex:1">Penjelajah File</div>
+      <button type="button" class="icon-btn" id="fNew" aria-label="Buat baru"><svg class="ic"><use href="#i-plus"/></svg></button>
+    </header>
+    <div class="finder-head">
+      <label class="search"><svg class="ic"><use href="#i-search"/></svg><input id="fSearch" type="search" placeholder="Cari file dan folder" autocomplete="off" /></label>
+      <div class="crumbs" id="crumbs"></div>
+    </div>
+    <div class="scroll">
+      <div class="list f-list" id="fList"></div>
+      <p class="real-store" id="fCount"></p>
+    </div>
+  </section>
+
+  <!-- EDITOR TEKS -->
+  <section id="screen-editor" class="screen">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="edBack" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="ed-title"><div class="topbar-title" id="edTitle"></div><div class="topbar-sub" id="edPath"></div></div>
+      <button type="button" class="icon-btn" id="edFmt" aria-label="Rapikan JSON" hidden><svg class="ic"><use href="#i-code"/></svg></button>
+      <button type="button" class="icon-btn save" id="edSave" aria-label="Simpan" disabled><svg class="ic"><use href="#i-save"/></svg></button>
+    </header>
+    <textarea id="edText" class="ed" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+    <div class="ed-foot" id="edFoot"></div>
+  </section>
+
+  <!-- FILE MODEL (GGUF) -->
+  <section id="screen-gguf" class="screen">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="ggBack" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="ed-title"><div class="topbar-title" id="ggTitle">Model GGUF</div><div class="topbar-sub" id="ggPath"></div></div>
+      <button type="button" class="icon-btn save" id="ggSave" aria-label="Simpan" disabled><svg class="ic"><use href="#i-save"/></svg></button>
+    </header>
+    <div class="scroll gg">
+      <div class="gg-hero"><div class="m-ico">
+        <svg class="ic"><use href="#i-cube"/></svg></div>
+        <div class="model-info"><strong id="ggSize"></strong><span>Bobot tensor dibaca saja. Metadata dan konfigurasi bisa diedit.</span></div>
+      </div>
+      <h3 class="section-h">Informasi</h3>
+      <div class="list" id="ggInfo"></div>
+      <h3 class="section-h">Metadata yang bisa diedit</h3>
+      <label class="lbl">Nama file<input class="field" id="ggFile" readonly autocomplete="off" spellcheck="false" /></label>
+      <label class="lbl">Nama model<input class="field" id="ggName" maxlength="60" autocomplete="off" /></label>
+      <label class="lbl">Panjang konteks<input class="field" id="ggCtx" type="number" inputmode="numeric" min="256" step="256" /></label>
+      <label class="lbl">Preset chat template
+        <select class="field" id="ggPreset"><option value="">Pilih preset…</option><option value="gemma">Gemma</option><option value="llama3">Llama 3</option><option value="chatml">ChatML</option><option value="mistral">Mistral</option><option value="phi3">Phi-3</option></select></label>
+      <label class="lbl">Chat template<textarea class="field mono" id="ggTpl" rows="4" spellcheck="false"></textarea></label>
+      <label class="lbl">System prompt bawaan<textarea class="field" id="ggSys" rows="3"></textarea></label>
+      <h3 class="section-h">Header file (128 byte pertama)</h3>
+      <pre class="hex" id="ggHex"></pre>
+      <button type="button" class="btn ghost" id="ggJson">Buka file konfigurasi .json</button>
+      <button type="button" class="btn danger" id="ggDel" style="margin-top:10px">Hapus file model</button>
+    </div>
+  </section>
+
+  <!-- CLEANER -->
+  <section id="screen-clean" class="screen">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="btnCleanBack" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="topbar-title pad">Pembersih</div>
+    </header>
+    <div class="scroll clean">
+      <div class="gauge" id="gauge">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="g-track" cx="100" cy="100" r="86"/>
+          <circle class="g-bar" id="gBar" cx="100" cy="100" r="86" pathLength="100"/>
+        </svg>
+        <span class="sweep"></span>
+        <div class="g-mid">
+          <b id="gNum">0</b><small id="gUnit">MB</small>
+          <em id="gLbl">Belum dipindai</em>
+        </div>
+      </div>
+      <p class="clean-status" id="cleanStatus">Pindai untuk melihat apa yang bisa dibersihkan.</p>
+      <div class="list clean-list" id="cleanList"></div>
+      <button type="button" class="btn primary" id="btnClean">Pindai sekarang</button>
+      <button type="button" class="btn ghost" id="btnCleanSecond" hidden>Pindai ulang</button>
+      <p class="real-store" id="realStore"></p>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section id="screen-about" class="screen">
+    <header class="topbar">
+      <button type="button" class="icon-btn" data-go="settings" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="topbar-title pad">Tentang</div>
+    </header>
+    <div class="scroll about">
+      <div class="about-hero">
+        <span class="ring r1"></span><span class="ring r2"></span>
+        <img src="assets/logo.webp" alt="Box AI" class="about-logo" width="112" height="112" />
+      </div>
+      <h1>Box AI</h1>
+      <p>Asisten AI privat yang berjalan di ponselmu. Chat, Pals, dan Model, berjalan offline sejak awal.</p>
+      <div class="facts">
+        <div><svg class="ic"><use href="#i-shield"/></svg><b>Privat</b><span>Data tetap lokal</span></div>
+        <div><svg class="ic"><use href="#i-bolt"/></svg><b>Cepat</b><span>Tanpa jaringan</span></div>
+        <div><svg class="ic"><use href="#i-cube"/></svg><b>Modular</b><span>Ganti model bebas</span></div>
+      </div>
+      <p class="muted">Box AI berbasis PocketPal AI (MIT). Sumber: github.com/v1-byte/Box-Ai</p>
+    </div>
+  </section>
+
+  <!-- BENCHMARK -->
+  <section id="screen-bench" class="screen">
+    <header class="topbar">
+      <button type="button" class="icon-btn" data-go="settings" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <div class="topbar-title pad">Benchmark</div>
+    </header>
+    <div class="scroll"><div id="benchBody"></div><button type="button" class="btn primary" id="btnBench">Jalankan benchmark</button></div>
+  </section>
+
+  <div class="overlay" id="overlay" hidden></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- In-app update overlay -->
+  <div id="updOverlay" class="upd-overlay" hidden>
+    <div class="upd-card">
+      <div class="upd-icon">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/></svg>
+      </div>
+      <h2 id="updTitle">Update tersedia</h2>
+      <p class="upd-sub" id="updSub">Mengunduh versi baru…</p>
+      <div class="upd-bar"><i id="updFill"></i></div>
+      <div class="upd-pct" id="updPct">0%</div>
+      <button type="button" class="btn primary" id="updBtn" hidden>Install sekarang</button>
+      <button type="button" class="btn ghost" id="updLater" hidden>Nanti saja</button>
+    </div>
+  </div>
+
+  <nav class="tabbar" id="tabbar">
+    <span class="pill" id="tabPill"></span>
+    <button type="button" class="tab active" data-go="chat" aria-label="Chat"><svg class="ic tab-icon"><use href="#i-chat"/></svg><span class="tab-label">Chat</span></button>
+    <button type="button" class="tab" data-go="models" aria-label="Model"><svg class="ic tab-icon"><use href="#i-cube"/></svg><span class="tab-label">Model</span></button>
+    <button type="button" class="tab" data-go="pals" aria-label="Pals"><svg class="ic tab-icon"><use href="#i-spark"/></svg><span class="tab-label">Pals</span></button>
+    <button type="button" class="tab" data-go="settings" aria-label="Pengaturan"><svg class="ic tab-icon"><use href="#i-gear"/></svg><span class="tab-label">Pengaturan</span></button>
+  </nav>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
