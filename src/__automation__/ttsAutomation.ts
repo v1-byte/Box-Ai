@@ -19,8 +19,7 @@ import {ttsStore} from '../store/TTSStore';
 
 const STATUS_FILENAME = 'tts-command-status.json';
 
-const SAMPLE_TEXT =
-  'Box AI runs language models on your phone, fully offline.';
+const SAMPLE_TEXT = 'Box AI runs language models on your phone, fully offline.';
 
 const TIMING_RUNS = 3;
 

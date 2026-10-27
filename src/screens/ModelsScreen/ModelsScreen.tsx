@@ -198,7 +198,7 @@ export const ModelsScreen: React.FC = observer(() => {
         try {
           await modelStore.addLocalModel(m.path);
           added++;
-        } catch (e) {
+        } catch {
           // already registered or unreadable
         }
       }
@@ -207,10 +207,7 @@ export const ModelsScreen: React.FC = observer(() => {
         `${found.length} file ditemukan · ${added} ditambahkan ke Terunduh (dedupe otomatis).`,
       );
     } catch (e) {
-      Alert.alert(
-        'Scan gagal',
-        e instanceof Error ? e.message : String(e),
-      );
+      Alert.alert('Scan gagal', e instanceof Error ? e.message : String(e));
     }
   };
 

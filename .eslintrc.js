@@ -44,6 +44,10 @@ module.exports = {
   ignorePatterns: [
     'coverage/',
     'node_modules/',
+    // The Android shell is a standalone browser bundle, not React Native code.
+    'BoxAI-Android/app/src/main/assets/www/',
+    // The UI preview is the same standalone browser implementation for demos.
+    'ui-preview/',
     'android/',
     'ios/',
     'build/',

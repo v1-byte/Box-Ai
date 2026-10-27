@@ -48,7 +48,9 @@ export const PrivacyDashboardScreen = observer(() => {
 
         <Card style={styles.card} mode="outlined">
           <Card.Content>
-            <Text variant="titleMedium">Yang opsional (hanya jika kamu izinkan)</Text>
+            <Text variant="titleMedium">
+              Yang opsional (hanya jika kamu izinkan)
+            </Text>
             <View style={styles.listGap}>
               {[
                 'Download model dari Hugging Face',

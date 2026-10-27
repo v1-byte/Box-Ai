@@ -7,9 +7,9 @@ describe('benchmarkRoute', () => {
     });
 
     it('matches the bench URL with a query string (prefix tolerates query)', () => {
-      expect(
-        isBenchmarkRunnerUrl('boxai://e2e/benchmark?autostart=1'),
-      ).toBe(true);
+      expect(isBenchmarkRunnerUrl('boxai://e2e/benchmark?autostart=1')).toBe(
+        true,
+      );
     });
 
     it('does not match unrelated URLs', () => {
@@ -25,9 +25,9 @@ describe('benchmarkRoute', () => {
 
   describe('parseBenchmarkAutostart', () => {
     it('returns true for autostart=1', () => {
-      expect(
-        parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=1'),
-      ).toBe(true);
+      expect(parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=1')).toBe(
+        true,
+      );
     });
 
     it('returns true for autostart=true (case-insensitive)', () => {
@@ -44,16 +44,14 @@ describe('benchmarkRoute', () => {
 
     it('returns true when autostart sits alongside other query params', () => {
       expect(
-        parseBenchmarkAutostart(
-          'boxai://e2e/benchmark?foo=bar&autostart=1',
-        ),
+        parseBenchmarkAutostart('boxai://e2e/benchmark?foo=bar&autostart=1'),
       ).toBe(true);
     });
 
     it('returns false for autostart=0', () => {
-      expect(
-        parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=0'),
-      ).toBe(false);
+      expect(parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=0')).toBe(
+        false,
+      );
     });
 
     it('returns false for autostart=false', () => {
@@ -66,9 +64,9 @@ describe('benchmarkRoute', () => {
       expect(
         parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=banana'),
       ).toBe(false);
-      expect(
-        parseBenchmarkAutostart('boxai://e2e/benchmark?autostart='),
-      ).toBe(false);
+      expect(parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=')).toBe(
+        false,
+      );
       expect(
         parseBenchmarkAutostart('boxai://e2e/benchmark?autostart=11'),
       ).toBe(false);

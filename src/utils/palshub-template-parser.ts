@@ -72,7 +72,7 @@ export function parsePalsHubTemplate(template: string): ParsedMustacheTemplate {
   const cleanSystemPrompt = cleanTemplate(template);
 
   // Convert schema to Box AI format
-  const parameterSchema = schema ? convertJsonSchemaToBox AI(schema) : [];
+  const parameterSchema = schema ? convertJsonSchemaToBoxAI(schema) : [];
   const defaultParameters = schema
     ? extractDefaultParametersFromSchema(schema)
     : {};
@@ -87,7 +87,7 @@ export function parsePalsHubTemplate(template: string): ParsedMustacheTemplate {
 /**
  * Converts JSON schema to Box AI ParameterDefinition format
  */
-function convertJsonSchemaToBox AI(
+function convertJsonSchemaToBoxAI(
   schema: Record<string, MustacheSchemaDefinition>,
 ): ParameterDefinition[] {
   const parameterSchema: ParameterDefinition[] = [];

@@ -29,8 +29,7 @@ export async function recommendModelTier(): Promise<ModelRecommendation> {
       tier: 'tiny',
       maxParamsLabel: '≤ 1–2B Q4',
       examples: ['Gemma 2 2B Q4', 'Qwen2.5 1.5B Q4', 'SmolLM 1.7B'],
-      warning:
-        'RAM rendah — hindari model >2B. Tutup app lain sebelum load.',
+      warning: 'RAM rendah — hindari model >2B. Tutup app lain sebelum load.',
     };
   }
   if (gb < 6) {

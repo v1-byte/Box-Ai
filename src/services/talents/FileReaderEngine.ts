@@ -50,7 +50,7 @@ export class FileReaderEngine implements TalentEngine {
 
     try {
       // Dynamic require so tests without native FS still load the module.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
       const RNFS = require('@dr.pogodin/react-native-fs');
       const exists = await RNFS.exists(path);
       if (!exists) {

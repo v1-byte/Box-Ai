@@ -2,7 +2,7 @@
  * Universal on-device GGUF scanner — Pocket AI, Box AI, Download, /model ai/, other apps.
  * Used by Models "Terunduh" so multi-model files are listed without re-download.
  */
-import RNFS from '@dr.pogodin/react-native-fs';
+import * as RNFS from '@dr.pogodin/react-native-fs';
 
 export type ExternalModelSource =
   | 'pocketai'
@@ -97,7 +97,10 @@ export function detectSource(path: string): ExternalModelSource {
 
 const MIN_BYTES = 5 * 1024 * 1024; // 50MB
 
-async function tryRenameTruncated(filePath: string, name: string): Promise<{path: string; name: string}> {
+async function tryRenameTruncated(
+  filePath: string,
+  name: string,
+): Promise<{path: string; name: string}> {
   const fixed = normalizeGgufName(name);
   if (fixed === name) return {path: filePath, name};
   if (!/\.gguf$/i.test(fixed)) return {path: filePath, name};
@@ -168,8 +171,11 @@ export async function scanAllAiModels(): Promise<FoundExternalModel[]> {
   const seenPath = new Set<string>();
 
   for (const root of roots) {
-    const depth =
-      root.includes('Android/data') ? 3 : root.toLowerCase().includes('download') ? 2 : 3;
+    const depth = root.includes('Android/data')
+      ? 3
+      : root.toLowerCase().includes('download')
+        ? 2
+        : 3;
     await scanDir(root, depth, raw, seenPath);
   }
 

@@ -87,7 +87,9 @@ describe('AboutScreen', () => {
     expect(Linking.openURL).toHaveBeenCalledWith(
       'https://github.com/v1-byte/Box-Ai/privacy-policy',
     );
-    expect(Linking.openURL).toHaveBeenCalledWith('https://github.com/v1-byte/Box-Ai/terms');
+    expect(Linking.openURL).toHaveBeenCalledWith(
+      'https://github.com/v1-byte/Box-Ai/terms',
+    );
     expect(notices.props.testID).toBe('about-open-source-notices');
   });
 

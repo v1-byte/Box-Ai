@@ -58,7 +58,8 @@ export const AboutScreen: React.FC = () => {
       id: 'privacy',
       label: l10n.about.privacyPolicy,
       role: 'link',
-      onPress: () => Linking.openURL('https://github.com/v1-byte/Box-Ai/privacy-policy'),
+      onPress: () =>
+        Linking.openURL('https://github.com/v1-byte/Box-Ai/privacy-policy'),
     },
     {
       id: 'terms',

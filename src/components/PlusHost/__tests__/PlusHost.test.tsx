@@ -393,9 +393,7 @@ describe.each([
     act(() => openPlus());
     nextFrame();
 
-    expect(targets()).toEqual([
-      'header:Thank you for keeping Box AI going.',
-    ]);
+    expect(targets()).toEqual(['header:Thank you for keeping Box AI going.']);
   });
 
   it('makes no call when Plus is relocked while shown', () => {
@@ -421,9 +419,7 @@ describe.each([
     );
     nextFrame();
 
-    expect(targets()).toEqual([
-      'header:Thank you for keeping Box AI going.',
-    ]);
+    expect(targets()).toEqual(['header:Thank you for keeping Box AI going.']);
   });
 
   it('makes no close call when no hamburger holds the slot', () => {

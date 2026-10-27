@@ -1,4 +1,4 @@
-import RNFS from '@dr.pogodin/react-native-fs';
+import * as RNFS from '@dr.pogodin/react-native-fs';
 import type {RemoteModel} from './types';
 
 /** Placeholder endpoints — override via CLOUDFLARE_TUNNEL_URL / R2 public URL. */

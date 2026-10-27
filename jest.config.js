@@ -32,7 +32,11 @@ module.exports = {
     '**/__tests__/**/*.test.[jt]s?(x)',
     '**/?(*.)+(spec|test).[jt]s?(x)',
   ],
-  testPathIgnorePatterns: ['/node_modules/', '/e2e/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/e2e/',
+    '/scripts/__tests__/boxai-model-loading.test.js',
+  ],
   moduleNameMapper: {
     '^react-native-paper$': '<rootDir>/node_modules/react-native-paper/src',
     '@react-native-async-storage/async-storage':

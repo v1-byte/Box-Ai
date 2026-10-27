@@ -23,19 +23,16 @@ function prayerTimes(
   date: Date,
 ): Record<string, string> {
   // Very simplified approximation for UX; replace with adhan lib later.
-  const day =
-    Math.floor(
-      (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
-        Date.UTC(date.getFullYear(), 0, 0)) /
-        86400000,
-    );
-  const decl =
-    23.45 * Math.sin(deg2rad((360 / 365) * (day - 81)));
+  const day = Math.floor(
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
+      Date.UTC(date.getFullYear(), 0, 0)) /
+      86400000,
+  );
+  const decl = 23.45 * Math.sin(deg2rad((360 / 365) * (day - 81)));
   const latR = deg2rad(lat);
   const declR = deg2rad(decl);
   const cosHa = -Math.tan(latR) * Math.tan(declR);
-  const ha =
-    cosHa >= 1 ? 0 : cosHa <= -1 ? 12 : rad2deg(Math.acos(cosHa)) / 15;
+  const ha = cosHa >= 1 ? 0 : cosHa <= -1 ? 12 : rad2deg(Math.acos(cosHa)) / 15;
   const noon = 12 - lon / 15;
   const fmt = (h: number) => {
     let hh = Math.floor(h);
@@ -63,10 +60,8 @@ export class PrayerTimeEngine implements TalentEngine {
     args: Record<string, any>,
     _ctx?: TalentExecuteContext,
   ): Promise<TalentResult> {
-    const lat =
-      typeof args.latitude === 'number' ? args.latitude : 3.3; // Tarakan-ish
-    const lon =
-      typeof args.longitude === 'number' ? args.longitude : 117.6;
+    const lat = typeof args.latitude === 'number' ? args.latitude : 3.3; // Tarakan-ish
+    const lon = typeof args.longitude === 'number' ? args.longitude : 117.6;
     const city =
       typeof args.city === 'string' && args.city.trim()
         ? args.city.trim()

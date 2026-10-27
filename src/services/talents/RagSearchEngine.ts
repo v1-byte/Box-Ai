@@ -40,7 +40,10 @@ export class RagSearchEngine implements TalentEngine {
     if (action === 'list') {
       const docs = listDocuments();
       if (!docs.length) {
-        return {type: 'text', summary: 'RAG store empty. Ingest a document first.'};
+        return {
+          type: 'text',
+          summary: 'RAG store empty. Ingest a document first.',
+        };
       }
       return {
         type: 'text',

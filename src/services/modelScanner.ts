@@ -1,4 +1,4 @@
-import RNFS from '@dr.pogodin/react-native-fs';
+import * as RNFS from '@dr.pogodin/react-native-fs';
 
 /**
  * Full-device model scanner — finds .gguf/.bin/.onnx across common

@@ -22,11 +22,7 @@ export type RagDocument = {
 const docs = new Map<string, RagDocument>();
 const chunks = new Map<string, RagChunk>();
 
-export function chunkText(
-  text: string,
-  size = 800,
-  overlap = 120,
-): string[] {
+export function chunkText(text: string, size = 800, overlap = 120): string[] {
   const out: string[] = [];
   if (!text) return out;
   let i = 0;
@@ -55,7 +51,11 @@ export function scoreChunk(query: string, text: string): number {
   return hit / q.size;
 }
 
-export function ingestText(path: string, name: string, text: string): RagDocument {
+export function ingestText(
+  path: string,
+  name: string,
+  text: string,
+): RagDocument {
   const id = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const parts = chunkText(text);
   const chunkIds: string[] = [];
@@ -104,9 +104,6 @@ export function buildContextBlock(query: string, topK = 4): string {
   const hits = retrieve(query, topK);
   if (!hits.length) return '';
   return hits
-    .map(
-      (h, i) =>
-        `[${i + 1}] (${h.sourceName} #${h.index})\n${h.text}`,
-    )
+    .map((h, i) => `[${i + 1}] (${h.sourceName} #${h.index})\n${h.text}`)
     .join('\n\n');
 }
