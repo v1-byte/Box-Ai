@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # --- llama.cpp: versi DIPATOK. Ganti tag ini hanya setelah menguji ulang boxai_jni.cpp. ---
-set(LLAMA_CPP_TAG "b5000" CACHE STRING "Tag rilis llama.cpp (https://github.com/ggml-org/llama.cpp/tags)")
+set(LLAMA_CPP_TAG "b5001" CACHE STRING "Tag rilis llama.cpp (https://github.com/ggml-org/llama.cpp/tags)")
 
 # ggml tanpa optimasi (-O0) membuat inferensi puluhan kali lebih lambat; selalu Release,
 # juga untuk APK debug.
