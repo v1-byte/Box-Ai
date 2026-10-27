@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.35';
+  const APP_VERSION = '2.2.36';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -808,7 +808,8 @@
   async function hfRepo(repo) {
     let files;
     try {
-      const r = await fetch('https://huggingface.co/api/models/' + repo + '/tree/main', { headers: hfHead() });
+      // Banyak repo HF menyimpan model di subfolder; recursive mencegah repo valid terbaca kosong.
+      const r = await fetch('https://huggingface.co/api/models/' + repo + '/tree/main?recursive=true', { headers: hfHead() });
       if (r.status === 401 || r.status === 403) return toast('Model gated. Isi token Hugging Face di Pengaturan.');
       if (!r.ok) throw new Error(r.status);
       files = (await r.json()).filter(f => f.type === 'file' && /\.gguf$/i.test(f.path) && !isProjectionFile(f.path)).sort((a, b) => a.size - b.size);

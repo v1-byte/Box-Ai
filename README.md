@@ -2,7 +2,7 @@
 
 > Asisten AI privat yang berjalan di ponselmu. Chat, Pals, dan Model, berjalan offline sejak awal.
 
-**Versi UI:** `2.2.35` · **Platform:** Android (WebView) · **Bahasa antarmuka:** Indonesia
+**Versi UI:** `2.2.36` · **Platform:** Android (WebView) · **Bahasa antarmuka:** Indonesia
 **Basis:** [PocketPal AI](https://github.com/a-ghorbani/pocketpal-ai) (MIT) · **Sumber:** `github.com/v1-byte/Box-Ai`
 
 Repo ini berisi **lapisan UI WebView** Box AI (HTML + CSS + JavaScript murni) **dan proyek Android** (Kotlin + JNI llama.cpp + GitHub Actions) yang membungkusnya. Status tiap fitur ada di [`docs/STATUS.md`](docs/STATUS.md): kode belum pernah dibangun/diuji di perangkat.
@@ -225,7 +225,7 @@ Dua kartu pintasan di atas:
 - Tentang Box AI · **Lisensi** (sheet berisi lisensi Box AI, PocketPal AI, llama.cpp, dan model: Gemma Terms of Use, Llama Community License, Phi-3 MIT, Mistral Nemo & Qwen2.5 Apache 2.0)
 - **Akses folder penyimpanan** (izin tree akses Android)
 - **Pindai model di perangkat**
-- **Versi / Cek update** (menampilkan `2.2.35`)
+- **Versi / Cek update** (menampilkan `2.2.36`)
 
 ### Penjelajah File
 

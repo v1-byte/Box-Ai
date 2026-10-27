@@ -12,8 +12,8 @@ android {
         applicationId = "com.boxai.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2235
-        versionName = "2.2.35"
+        versionCode = 2236
+        versionName = "2.2.36"
 
         ndk {
             // llama.cpp hanya dibangun untuk ABI 64-bit ARM (HP nyata) dan x86_64 (emulator).

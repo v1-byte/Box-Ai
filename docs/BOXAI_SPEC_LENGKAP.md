@@ -4,7 +4,7 @@
 
 ## 1. Status paket saat ini
 
-ZIP asal berisi lapisan UI WebView Box AI versi 2.2.35: `index.html`, `styles.css`, `app.js`, dan aset logo. Dokumen UI dan kontrak bridge juga tersedia. Paket ini **belum merupakan proyek Android yang dapat langsung dibangun**: belum ada konfigurasi Gradle, `AndroidManifest.xml`, kode Kotlin, JNI/C++, atau runtime inferensi di paket ini.
+ZIP asal berisi lapisan UI WebView Box AI versi 2.2.36: `index.html`, `styles.css`, `app.js`, dan aset logo. Dokumen UI dan kontrak bridge juga tersedia. Paket ini **belum merupakan proyek Android yang dapat langsung dibangun**: belum ada konfigurasi Gradle, `AndroidManifest.xml`, kode Kotlin, JNI/C++, atau runtime inferensi di paket ini.
 
 Karena itu:
 - Tampilan asli adalah acuan dan harus dipertahankan.

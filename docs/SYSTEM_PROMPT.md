@@ -1,6 +1,6 @@
 # System prompt di Box AI
 
-Dokumen ini menjelaskan bagaimana UI Box AI v2.2.35 menyusun *system prompt* yang dikirim ke model
+Dokumen ini menjelaskan bagaimana UI Box AI v2.2.36 menyusun *system prompt* yang dikirim ke model
 (`sysPrompt()` di `app.js`).
 
 ## Urutan prioritas
