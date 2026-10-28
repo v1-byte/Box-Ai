@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.34';
+  const APP_VERSION = '2.2.35';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -20,7 +20,7 @@
   const SEED_CHAT = [];
   const DEFAULTS = {
     theme: 'system', lang: 'id', haptics: true, onDevice: true,
-    temp: 0.7, topp: 0.9, maxTok: 1024, ctx: 1024,
+    temp: 0.7, topp: 0.9, maxTok: 512, ctx: 1024,
     active: '', dl: {}, pal: null, pals: [],
     cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
     chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', cfToken: '', r2Url: '', metaToken: '', ghPath: 'boxai/', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
@@ -285,17 +285,25 @@
     generate(msgs) {
       return new Promise((res, rej) => {
         let buf = '';
+        const startedAt = Date.now();
+        let statusIndex = 0;
+        const statuses = ['Menyiapkan model', 'AI sedang berpikir', 'Menyusun jawaban'];
+        const showStatus = () => live(statuses[statusIndex % statuses.length] + ' · ' + Math.floor((Date.now() - startedAt) / 1000) + ' dtk');
+        showStatus();
+        const statusTimer = setInterval(() => { statusIndex++; showStatus(); }, 900);
+        const finishStatus = () => clearInterval(statusTimer);
         const timeout = setTimeout(() => {
+          finishStatus();
           window.BoxEngine = null;
           rej(new Error('Model terlalu lama merespons. Pastikan hanya satu model aktif dan RAM cukup.'));
         }, 90000);
         const modelId = S.active;
         window.BoxEngine = {
-          token: t => { buf += t; live(buf); },
-          done: () => { clearTimeout(timeout); res(buf); },
-          error: m => { clearTimeout(timeout); rej(new Error(m)); }
+          token: t => { buf += t; finishStatus(); live(buf); },
+          done: () => { clearTimeout(timeout); finishStatus(); res(buf); },
+          error: m => { clearTimeout(timeout); finishStatus(); rej(new Error(m)); }
         };
-        NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: S.maxTok, n_ctx: S.ctx }));
+        NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: Math.min(Number(S.maxTok) || 512, 768), n_ctx: S.ctx }));
       });
     }
   };

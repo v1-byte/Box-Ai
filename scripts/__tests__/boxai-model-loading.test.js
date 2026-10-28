@@ -26,13 +26,13 @@ test('model loading validates GGUF and applies a conservative device-memory prof
   assert.match(kotlin, /memory\.availMem < minimumReserve/);
   assert.match(kotlin, /totalGiB <= 6\.5 -> 1024/);
   assert.match(kotlin, /totalGiB <= 6\.5 -> minOf\(2, cpuCount\)/);
-  assert.match(js, /maxTok: 1024, ctx: 1024/);
+  assert.match(js, /maxTok: 512, ctx: 1024/);
   assert.match(kotlin, /@JavascriptInterface fun recommendedContext\(\)/);
 });
 
 test('HF search explains repository-name search and release versions agree', () => {
   assert.match(html, /Cari nama repo HF, bukan nama file/);
-  assert.match(js, /APP_VERSION = '2\.2\.34'/);
-  assert.match(gradle, /versionCode = 38[\s\S]*versionName = "2\.2\.34"/);
-  assert.match(workflow, /BoxAI-v2\.2\.34-apk/);
+  assert.match(js, /APP_VERSION = '2\.2\.35'/);
+  assert.match(gradle, /versionCode = 39[\s\S]*versionName = "2\.2\.35"/);
+  assert.match(workflow, /BoxAI-v2\.2\.35-apk/);
 });

@@ -89,7 +89,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_release)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: BoxAI-v2.2.34-apk
+          name: BoxAI-v2.2.35-apk
           path: BoxAI-Android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
@@ -113,7 +113,8 @@ jobs:
             - Menghapus penolakan model berbasis batas tetap RAM 6 GB dan ukuran file 2,5 GB
             - Mode RAM rendah otomatis memakai konteks 512 dan satu thread
             - Model GGUF dicoba dimuat kecuali RAM bebas turun di bawah cadangan minimum 1 GB
-            - Versi aplikasi dinaikkan ke 2.2.34
+            - Versi aplikasi dinaikkan ke 2.2.35
+            - Indikator proses chat menampilkan tahap dan waktu respons; output dibatasi agar respons lebih cepat
             - Ikon pendingin memantau CPU, RAM, dan suhu; cooling pulse berjalan tiap 10 detik selama 5 detik
 
             APK signed: **app-release.apk**. Instal sebagai pembaruan di atas Box AI yang sudah terpasang.
