@@ -32,7 +32,7 @@ test('model loading validates GGUF and applies a conservative device-memory prof
 
 test('HF search explains repository-name search and release versions agree', () => {
   assert.match(html, /Cari nama repo HF, bukan nama file/);
-  assert.match(js, /APP_VERSION = '2\.2\.35'/);
-  assert.match(gradle, /versionCode = 39[\s\S]*versionName = "2\.2\.35"/);
-  assert.match(workflow, /BoxAI-v2\.2\.35-apk/);
+  assert.match(js, /APP_VERSION = '2\.2\.36'/);
+  assert.match(gradle, /versionCode = 40[\s\S]*versionName = "2\.2\.36"/);
+  assert.match(workflow, /BoxAI-v2\.2\.36-apk/);
 });

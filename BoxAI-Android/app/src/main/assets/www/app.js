@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.35';
+  const APP_VERSION = '2.2.36';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -2002,8 +2002,8 @@
 
   /* ---- In-app update (unduh + install di dalam app) ---- */
   function cmpVer(a, b) {
-    const pa = String(a).replace(/^v/i,'').split('.').map(Number);
-    const pb = String(b).replace(/^v/i,'').split('.').map(Number);
+    const pa = String(a).replace(/^v/i,'').match(/\d+/g)?.map(Number) || [];
+    const pb = String(b).replace(/^v/i,'').match(/\d+/g)?.map(Number) || [];
     for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
       const x = pa[i] || 0, y = pb[i] || 0;
       if (x !== y) return x - y;
