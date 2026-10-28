@@ -331,7 +331,12 @@
   }
   const pushAi = (h, raw) => { S.chat.push({ r: 'ai', h, raw }); save(); renderChat(); };
   function sysPrompt() {
-    const pal = allPals().find(p => p.id === S.pal), tools = Object.keys(TALENTS).filter(k => (k === 'web_search' ? S.web : S.talents[k]) && k !== 'render_html');
+    const pal = allPals().find(p => p.id === S.pal);
+    // Small on-device models frequently hallucinate tool calls for ordinary
+    // greetings. That creates a second full inference pass (and looks like
+    // "Model: calculate" in chat). Keep direct slash commands such as /calc
+    // available, but do not advertise automatic tools to local models.
+    const tools = S.onDevice ? [] : Object.keys(TALENTS).filter(k => (k === 'web_search' ? S.web : S.talents[k]) && k !== 'render_html');
     return (pal ? pal.prompt : (S.sysPrompt || meta(S.active).sys)) + (tools.length ? '\nTools: ' + tools.map(k => k + ' (' + TALENTS[k].desc + ')').join(', ') + '. Panggil dengan <tool>{"name":"...","args":{...}}</tool>.' : '');
   }
   async function agentTurn(depth) {
