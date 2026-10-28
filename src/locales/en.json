@@ -1663,7 +1663,7 @@
     "continueAnywayCta": "Continue anyway",
     "chooseSmallerModelCta": "Choose a smaller model",
     "startLabel": "Start voice mode",
-    "startLockedLabel": "Hands-free voice, PocketPal Plus",
+    "startLockedLabel": "Hands-free voice, Box AI Plus",
     "startLockedHint": "Opens a short preview. Typing and dictation stay free.",
     "teaserTitle": "Voice conversation is a Plus feature",
     "teaserBody": "Talk hands-free. It answers aloud.",
@@ -1769,10 +1769,10 @@
     "retry": "Retry"
   },
   "plus": {
-    "eyebrow": "PocketPal Plus",
+    "eyebrow": "Box AI Plus",
     "headline": "Push local AI further.",
-    "subline": "Plus keeps PocketPal free and open source. The extra features are our thanks.",
-    "unsupportedSubline": "Plus features don't run on this phone yet. You can still support PocketPal.",
+    "subline": "Plus keeps Box AI free and open source. The extra features are our thanks.",
+    "unsupportedSubline": "Plus features don't run on this phone yet. You can still support Box AI.",
     "thanksHeadline": "Thank you for keeping Box AI going.",
     "thanksSubline": "Plus is unlocked on this device.",
     "features": {
@@ -1809,7 +1809,7 @@
     "noPurchaseFound": "No Plus purchase found.",
     "restoreFailed": "Couldn't reach the store. Try again.",
     "sidebar": {
-      "title": "PocketPal Plus",
+      "title": "Box AI Plus",
       "unlocked": "Unlocked",
       "subtitleOne": "{{first}}",
       "subtitleTwo": "{{first}}, {{second}}",
