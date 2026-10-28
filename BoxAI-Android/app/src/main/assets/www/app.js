@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.39';
+  const APP_VERSION = '2.2.40';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -19,14 +19,17 @@
   ];
   const SEED_CHAT = [];
   const DEFAULTS = {
-    theme: 'system', lang: 'id', haptics: true, onDevice: true,
-    temp: 0.7, topp: 0.9, maxTok: 512, ctx: 1024,
+    theme: 'system', accent: 'ocean', lang: 'id', haptics: true, onDevice: true,
+    temp: 0.7, topp: 0.9, maxTok: 128, ctx: 1024,
     active: '', dl: {}, pal: null, pals: [],
     cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
     chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', cfToken: '', r2Url: '', metaToken: '', ghPath: 'boxai/', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
   };
   let S;
   try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('boxai.v3') || '{}')); } catch (e) { S = Object.assign({}, DEFAULTS); }
+  if (!['system', 'dark', 'light'].includes(S.theme)) S.theme = 'system';
+  if (!['ocean', 'violet', 'rose', 'amber', 'mint', 'cyan'].includes(S.accent)) S.accent = 'ocean';
+  S.maxTok = Math.max(64, Math.min(Number(S.maxTok) || 128, 128));
   let engineLoadingId = '', engineLoadedId = '', engineLoadTimer = 0;
   const isProjectionFile = name => /[-_.]*mmproj[-_.].+\.gguf$/i.test(String(name || ''));
   try {
@@ -115,7 +118,9 @@
   function applyTheme() {
     const t = S.theme === 'system' ? (mq && mq.matches ? 'light' : 'dark') : S.theme;
     document.documentElement.dataset.theme = t;
+    document.documentElement.dataset.accent = S.accent;
     const m = $('meta[name=theme-color]'); if (m) m.content = t === 'light' ? '#f6f5f1' : '#08090c';
+    try { if (NATIVE && NATIVE.setThemeMode) NATIVE.setThemeMode(t); } catch (_) {}
   }
   if (mq && mq.addEventListener) mq.addEventListener('change', applyTheme);
   applyTheme();
@@ -303,7 +308,7 @@
           done: () => { clearTimeout(timeout); finishStatus(); res(buf); },
           error: m => { clearTimeout(timeout); finishStatus(); rej(new Error(m)); }
         };
-        NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: Math.min(Number(S.maxTok) || 192, 192), n_ctx: Math.min(Number(S.ctx) || 1024, 1024) }));
+          NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: Math.min(Number(S.maxTok) || 128, 128), n_ctx: Math.min(Number(S.ctx) || 1024, 1024) }));
       });
     }
   };
@@ -1302,10 +1307,12 @@
 
   /* ================= SETTINGS ================= */
   const THEME_L = { system: 'Sistem', dark: 'Gelap', light: 'Terang' };
+  const ACCENT_L = { ocean: 'Biru laut', violet: 'Ungu', rose: 'Rose', amber: 'Amber', mint: 'Mint', cyan: 'Cyan' };
   const LANG_L = { id: 'Indonesia', en: 'English' };
   function cleanableSafe() { const c = S.cache; return c.kv + c.tmp + c.thumbs + c.logs; }
   function renderSettings() {
     $('#v-theme').textContent = THEME_L[S.theme];
+    const accentEl = $('#v-accent'); if (accentEl) accentEl.textContent = ACCENT_L[S.accent];
     $('#v-lang').textContent = LANG_L[S.lang];
     $('#swHaptics').checked = S.haptics;
     $('#v-model').textContent = model(S.active).short;
@@ -1334,6 +1341,10 @@
       const v = await choose('Tema', [{ v: 'system', l: 'Ikuti sistem' }, { v: 'dark', l: 'Gelap' }, { v: 'light', l: 'Terang' }], S.theme);
       if (v) { S.theme = v; save(); applyTheme(); renderSettings(); }
     },
+    async accent() {
+      const v = await choose('Warna aksen', Object.entries(ACCENT_L).map(([v, l]) => ({ v, l })), S.accent, 'Warna diterapkan ke tombol, sorotan, dan efek antarmuka.');
+      if (v) { S.accent = v; save(); applyTheme(); renderSettings(); }
+    },
     async lang() {
       const v = await choose('Bahasa', [{ v: 'id', l: 'Indonesia' }, { v: 'en', l: 'English' }], S.lang);
       if (v) { S.lang = v; save(); renderSettings(); if (v === 'en') toast('Pilihan disimpan.'); }
@@ -1346,7 +1357,7 @@
     },
     async temp() { const v = await slider('Temperature', 'Nilai rendah lebih konsisten, nilai tinggi lebih kreatif.', 0, 2, 0.1, S.temp, x => x.toFixed(1).replace('.', ',')); if (v != null) { S.temp = +v.toFixed(1); save(); renderSettings(); } },
     async topp() { const v = await slider('Top-p', 'Batas probabilitas kumulatif saat memilih kata berikutnya.', 0, 1, 0.05, S.topp, x => x.toFixed(2).replace('.', ',')); if (v != null) { S.topp = +v.toFixed(2); save(); renderSettings(); } },
-    async maxTok() { const v = await slider('Max tokens', 'Panjang maksimum satu jawaban.', 256, 4096, 128, S.maxTok, x => String(x)); if (v != null) { S.maxTok = v; save(); renderSettings(); } },
+    async maxTok() { const v = await slider('Max tokens', 'Batas 128 token membantu menjaga jawaban tetap ringkas dan mengurangi waktu inferensi model lokal.', 64, 128, 16, S.maxTok, x => String(x)); if (v != null) { S.maxTok = v; save(); renderSettings(); } },
     async ctx() { const v = await slider('Ukuran konteks', 'Konteks besar memakai lebih banyak RAM.', 1024, 8192, 1024, S.ctx, x => String(x)); if (v != null) { S.ctx = v; save(); renderSettings(); } },
     async sysPrompt() {
       const PRE = { Umum: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.', Penulis: 'Kamu penulis profesional. Perbaiki tata bahasa, jaga nada asli, dan jelaskan perubahan penting secara singkat.', Coder: 'Kamu insinyur perangkat lunak senior. Jawab dengan kode yang rapi dan penjelasan singkat.', Penerjemah: 'Kamu penerjemah Indonesia dan Inggris yang akurat. Terjemahkan tanpa menambah komentar.' };
@@ -2125,7 +2136,7 @@
   }
   let thermalSnapshot = {status: 0, label: 'normal', source: 'unavailable', batteryTempC: null, active: false, cpuBusy: 0, cpuTotal: 0, cpuPct: null, ramFree: 0, ramTotal: 0};
   let thermalWaiting = false;
-  let coolingPulse = false, previousCpu = null;
+  let previousCpu = null, memoryActionPending = false;
   const thermalStatusText = status => ['Normal', 'Ringan', 'Hangat', 'Panas', 'Kritis', 'Darurat', 'Shutdown'][Math.max(0, Math.min(6, status | 0))];
   function applyThermalState() {
     const button = $('#btnThermal');
@@ -2134,10 +2145,12 @@
     const state = thermalWaiting || status >= 4 ? 'paused' : status >= 3 ? 'throttled' : status >= 2 ? 'warm' : 'normal';
     const cpu = thermalSnapshot.cpuPct == null ? 'CPU —' : 'CPU ' + Math.round(thermalSnapshot.cpuPct) + '%';
     const temp = thermalSnapshot.batteryTempC == null ? '' : ' · ' + Number(thermalSnapshot.batteryTempC).toFixed(0) + '°';
-    const label = thermalWaiting ? 'Menunggu suhu HP turun' : 'Pendingin perangkat: ' + cpu + temp;
+    const ram = thermalSnapshot.ramTotal ? ' · RAM bebas ' + fmtMB(thermalSnapshot.ramFree / 1048576) : '';
+    const label = thermalWaiting ? 'Menunggu suhu HP turun' : 'Monitor perangkat: ' + cpu + ram + temp;
     button.dataset.state = state;
-    button.dataset.pulse = coolingPulse ? '1' : '0';
-    const badge = $('#thermalBadge'); if (badge) badge.textContent = thermalSnapshot.cpuPct == null ? '—' : Math.round(thermalSnapshot.cpuPct) + '%';
+    button.dataset.pulse = '0';
+    const cpuBadge = $('#thermalCpuBadge'); if (cpuBadge) cpuBadge.textContent = thermalSnapshot.cpuPct == null ? 'CPU —' : 'CPU ' + Math.round(thermalSnapshot.cpuPct) + '%';
+    const ramBadge = $('#thermalRamBadge'); if (ramBadge) ramBadge.textContent = thermalSnapshot.ramTotal ? 'RAM ' + fmtMB(thermalSnapshot.ramFree / 1048576) : 'RAM —';
     button.title = label;
     button.setAttribute('aria-label', label);
   }
@@ -2159,22 +2172,37 @@
       applyThermalState();
     } catch (e) {}
   }
-  function coolingPulseNow() {
-    if (coolingPulse || document.hidden) return;
-    coolingPulse = true;
-    applyThermalState();
-    try { if (NATIVE && NATIVE.coolDown) thermalSnapshot = {...thermalSnapshot, ...JSON.parse(NATIVE.coolDown() || '{}')}; } catch (e) {}
-    refreshThermalState();
-    setTimeout(() => { coolingPulse = false; applyThermalState(); }, 5000);
+  window.BoxMemory = {
+    result(ok, message) {
+      memoryActionPending = false;
+      if (ok) { engineLoadedId = ''; renderModels(); }
+      refreshThermalState();
+      toast(message || (ok ? 'Memori model dilepas dari Box AI' : 'Gagal melepas model dari memori'));
+    }
+  };
+  function releaseModelMemory() {
+    if (S.typing) return toast('Tunggu balasan selesai sebelum melepas model dari memori.');
+    if (memoryActionPending) return;
+    if (!NATIVE || !NATIVE.releaseModelMemory) return toast('Fungsi ini tidak tersedia pada build ini.');
+    memoryActionPending = true;
+    toast('Melepas model dari memori Box AI…');
+    try { NATIVE.releaseModelMemory(); }
+    catch (e) { memoryActionPending = false; toast('Gagal melepas model: ' + (e.message || 'coba lagi')); }
   }
   window.BoxThermal = {
     waiting(value) { thermalWaiting = !!value; applyThermalState(); },
   };
-  $('#btnThermal').addEventListener('click', () => {
+  $('#btnThermal').addEventListener('click', async () => {
     const status = thermalSnapshot.status | 0;
     const statusText = thermalWaiting ? 'Inferensi sedang ditahan sampai suhu turun.' : 'Status perangkat: ' + thermalStatusText(status) + '.';
+    const cpuPct = thermalSnapshot.cpuPct == null ? null : Math.round(thermalSnapshot.cpuPct);
+    const ramFree = Number(thermalSnapshot.ramFree) || 0, ramTotal = Number(thermalSnapshot.ramTotal) || 0;
+    const ramUsedPct = ramTotal ? Math.round(Math.max(0, Math.min(100, (ramTotal - ramFree) / ramTotal * 100))) : 0;
+    const resourceCards = `<div class="resource-grid">
+      <div class="resource-card"><div class="resource-head"><span>CPU</span><strong>${cpuPct == null ? '—' : cpuPct + '%'}</strong></div><div class="resource-track"><i style="width:${cpuPct == null ? 0 : cpuPct}%"></i></div><small>Penggunaan perangkat</small></div>
+      <div class="resource-card"><div class="resource-head"><span>RAM terpakai</span><strong>${ramTotal ? ramUsedPct + '%' : '—'}</strong></div><div class="resource-track ram"><i style="width:${ramUsedPct}%"></i></div><small>${ramTotal ? fmtMB(ramFree / 1048576) + ' bebas / ' + fmtMB(ramTotal / 1048576) : 'Data tidak tersedia'}</small></div>
+    </div>`;
     const details = thermalSnapshot.batteryTempC == null ? '' : `<p class="sub">Suhu baterai: ${Number(thermalSnapshot.batteryTempC).toFixed(1)} °C</p>`;
-    const ram = thermalSnapshot.ramTotal ? `<p class="sub">CPU: ${thermalSnapshot.cpuPct == null ? '—' : Math.round(thermalSnapshot.cpuPct) + '%'} · RAM bebas: ${fmtMB(thermalSnapshot.ramFree / 1048576)} dari ${fmtMB(thermalSnapshot.ramTotal / 1048576)}</p>` : '';
     const action = status >= 4 || thermalWaiting
       ? 'Box AI menunda permintaan baru sampai status termal membaik.'
       : status >= 3
@@ -2182,10 +2210,12 @@
         : status >= 2
           ? 'Box AI otomatis membatasi thread CPU dan konteks agar beban lebih rendah.'
           : 'Perlindungan aktif memantau status termal Android dan menyesuaikan beban model bila perangkat mulai panas.';
-    openSheet(`<h2>Pendingin perangkat</h2><p class="sub">${esc(statusText)}</p>${details}${ram}<p>${esc(action)}</p><p class="sub">Cooling pulse berjalan tiap 10 detik selama 5 detik. Aplikasi melakukan trim/GC ringan dan tidak mematikan model aktif.</p><button class="btn ghost" data-close>Tutup</button>`);
+    const result = await openSheet(`<div class="thermal-hero"><span class="thermal-hero-icon">${ic('cooler')}</span><div><h2>Panel performa</h2><p class="sub">${esc(statusText)}</p></div></div>${resourceCards}${details}<p>${esc(action)}</p><p class="sub">Box AI tidak dapat menghapus RAM sistem atau mematikan aplikasi lain. Tombol di bawah melepas model yang sedang dimuat oleh Box AI agar memori milik aplikasi ini dapat dikembalikan ke Android. Model akan dimuat ulang saat chat berikutnya.</p><button type="button" class="btn primary" data-memory ${S.typing || memoryActionPending ? 'disabled' : ''}>Lepaskan model dari RAM Box AI</button><button class="btn ghost" data-close>Tutup</button>`, (el, close) => $('[data-memory]', el).addEventListener('click', () => close('memory')));
+    if (result === 'memory') releaseModelMemory();
   });
   refreshThermalState();
-  setInterval(() => { if (!document.hidden) { refreshThermalState(); coolingPulseNow(); } }, 10000);
+  setTimeout(() => { if (!document.hidden) refreshThermalState(); }, 1200);
+  setInterval(() => { if (!document.hidden) refreshThermalState(); }, 10000);
   setTimeout(checkUpdateSilent, 2800);
   // Sinkronkan model aplikasi biasa saja; pemindaian mendalam hanya lewat tombol Pindai.
   applyWeb(); renderChat(); renderModels(); renderPals(); renderSettings(); updateTop();

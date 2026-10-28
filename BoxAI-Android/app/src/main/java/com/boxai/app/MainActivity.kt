@@ -367,12 +367,24 @@ class Bridge(
         secretName(name)?.let { secrets.remove(it) }
     }
 
+    @JavascriptInterface fun setThemeMode(mode: String) {
+        val light = mode == "light"
+        activity.runOnUiThread {
+            activity.window.statusBarColor = Color.parseColor(if (light) "#F6F5F1" else "#08090C")
+            activity.window.navigationBarColor = Color.parseColor(if (light) "#F6F5F1" else "#08090C")
+            activity.window.decorView.systemUiVisibility = if (light) {
+                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            } else 0
+        }
+    }
+
     @Volatile private var currentModel: LlamaModel? = null
     @Volatile private var currentModelPath: String? = null
     @Volatile private var currentModelConfigKey: String? = null
     @Volatile private var hotLimits: RuntimeLimits? = null
     @Volatile private var hotPath: String? = null
     private val engineLock = Mutex()
+    private val inferenceLock = Mutex()
 
     private data class RuntimeLimits(val contextSize: Int, val threads: Int)
 
@@ -592,19 +604,21 @@ class Bridge(
     /** Explicit load action for the Models screen; Chat also calls the same guarded loader lazily. */
     @JavascriptInterface fun preloadModel(modelName: String, requestedContext: Int, temperature: Float, topP: Float, modelId: String) {
         scope.launch(Dispatchers.IO) {
-            try {
-                val file = resolveModelFile(modelName)
-                    ?: throw IllegalArgumentException("File GGUF tidak ditemukan atau header GGUF tidak valid: ${File(modelName).name}")
-                loadOrReuseModel(
-                    file,
-                    requestedContext,
-                    temperature.coerceIn(0f, 2f),
-                    topP.coerceIn(0.01f, 1f)
-                )
-                modelResult(true, file.name, modelId = modelId)
-            } catch (error: Throwable) {
-                val message = (error.message ?: error.javaClass.simpleName).take(500)
-                modelResult(false, modelName.substringAfterLast('/'), message, modelId)
+            inferenceLock.withLock {
+                try {
+                    val file = resolveModelFile(modelName)
+                        ?: throw IllegalArgumentException("File GGUF tidak ditemukan atau header GGUF tidak valid: ${File(modelName).name}")
+                    loadOrReuseModel(
+                        file,
+                        requestedContext,
+                        temperature.coerceIn(0f, 2f),
+                        topP.coerceIn(0.01f, 1f)
+                    )
+                    modelResult(true, file.name, modelId = modelId)
+                } catch (error: Throwable) {
+                    val message = (error.message ?: error.javaClass.simpleName).take(500)
+                    modelResult(false, modelName.substringAfterLast('/'), message, modelId)
+                }
             }
         }
     }
@@ -627,6 +641,7 @@ class Bridge(
 
     @JavascriptInterface fun generate(json: String) {
         scope.launch(Dispatchers.Default) {
+          inferenceLock.withLock {
             try {
                 awaitThermalSafe()
                 val o = JSONObject(json)
@@ -643,9 +658,9 @@ class Bridge(
                 }
 
                 val nCtx = o.optInt("n_ctx", 1024).coerceIn(512, 8192)
-                // Full completion is blocking (no token stream). Cap length so a reply
-                // returns in seconds instead of running past the chat watchdog.
-                val maxTok = o.optInt("max_tokens", 192).coerceIn(32, 192)
+                // This llama-android API returns only after full completion; keep replies
+                // short on-device to reduce the time before the UI receives any text.
+                val maxTok = o.optInt("max_tokens", 128).coerceIn(32, 128)
                 val temp = o.optDouble("temp", 0.7).toFloat().coerceIn(0f, 2f)
                 val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
                 val model = loadOrReuseModel(modelFile, nCtx, temp, topP)
@@ -704,18 +719,44 @@ class Bridge(
                 val msg = (e.message ?: "unknown").replace("'", "\\'").replace("\n", " ")
                 post("window.BoxEngine&&BoxEngine.error('$msg')")
             }
+          }
         }
     }
 
     @JavascriptInterface fun unloadModel() {
         scope.launch(Dispatchers.Default) {
-            engineLock.withLock {
-                currentModel?.let { runCatching { Llama.releaseModel(it) } }
-                currentModel = null
-                currentModelPath = null
-                currentModelConfigKey = null
-                hotLimits = null
-                hotPath = null
+            inferenceLock.withLock {
+                engineLock.withLock {
+                    currentModel?.let { runCatching { Llama.releaseModel(it) } }
+                    currentModel = null
+                    currentModelPath = null
+                    currentModelConfigKey = null
+                    hotLimits = null
+                    hotPath = null
+                }
+            }
+        }
+    }
+
+    /** Melepas hanya model milik Box AI; Android tidak mengizinkan aplikasi membersihkan RAM sistem/aplikasi lain. */
+    @JavascriptInterface fun releaseModelMemory() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                inferenceLock.withLock {
+                    engineLock.withLock {
+                        currentModel?.let { Llama.releaseModel(it) }
+                        currentModel = null
+                        currentModelPath = null
+                        currentModelConfigKey = null
+                        hotLimits = null
+                        hotPath = null
+                    }
+                }
+                System.gc()
+                post("window.BoxMemory&&BoxMemory.result(true,${JSONObject.quote("Model dilepas dari RAM Box AI. Model akan dimuat ulang saat chat berikutnya.")})")
+            } catch (error: Throwable) {
+                val message = (error.message ?: "Tidak dapat melepas model").take(240)
+                post("window.BoxMemory&&BoxMemory.result(false,${JSONObject.quote(message)})")
             }
         }
     }
@@ -1288,17 +1329,22 @@ class Bridge(
             (externalRoot != null && (target.path == externalRoot.path || target.path.startsWith(externalRoot.path + File.separator)))
         if (!allowed || !target.isFile) return false
 
-        engineLock.tryLock().let { locked ->
-            if (locked) {
+        inferenceLock.tryLock().let { inferenceLocked ->
+            if (inferenceLocked) {
                 try {
-                    if (currentModelPath == target.absolutePath) {
-                        currentModel?.let { runCatching { Llama.releaseModel(it) } }
-                        currentModel = null
-                        currentModelPath = null
-                        currentModelConfigKey = null
+                    engineLock.tryLock().let { engineLocked ->
+                        if (!engineLocked) return false
+                        try {
+                            if (currentModelPath == target.absolutePath) {
+                                currentModel?.let { runCatching { Llama.releaseModel(it) } }
+                                currentModel = null
+                                currentModelPath = null
+                                currentModelConfigKey = null
+                            }
+                            return target.delete()
+                        } finally { engineLock.unlock() }
                     }
-                    return target.delete()
-                } finally { engineLock.unlock() }
+                } finally { inferenceLock.unlock() }
             }
             return false
         }

@@ -79,7 +79,7 @@
         </div>
       </div>
       <button type="button" class="icon-btn" id="btnNew" aria-label="Chat baru"><svg class="ic"><use href="#i-edit"/></svg></button>
-      <button type="button" class="icon-btn thermal-btn" id="btnThermal" data-state="normal" data-pulse="0" aria-label="Pendingin perangkat" title="Pendingin perangkat"><svg class="ic"><use href="#i-cooler"/></svg><span class="thermal-badge" id="thermalBadge">—</span></button>
+      <button type="button" class="icon-btn thermal-btn" id="btnThermal" data-state="normal" data-pulse="0" aria-label="Monitor CPU dan RAM" title="Monitor CPU dan RAM"><span class="thermal-fan"><svg class="ic"><use href="#i-cooler"/></svg></span><span class="thermal-badge"><span id="thermalCpuBadge">CPU —</span><span id="thermalRamBadge">RAM —</span></span></button>
     </header>
 
     <div class="messages" id="messages"></div>
@@ -170,6 +170,7 @@
       <h3 class="section-h">Aplikasi</h3>
       <div class="list">
         <div class="li link" data-set="theme"><span>Tema</span><span class="val" id="v-theme"></span></div>
+        <div class="li link" data-set="accent"><span>Warna aksen</span><span class="val" id="v-accent"></span></div>
         <div class="li link" data-set="lang"><span>Bahasa</span><span class="val" id="v-lang"></span></div>
         <div class="li"><span>Haptics</span><label class="sw"><input type="checkbox" id="swHaptics" /><i></i></label></div>
       </div>
@@ -204,7 +205,7 @@
         <div class="li link" data-set="license"><span>Lisensi</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
         <div class="li link" data-set="requestTree"><span>Izinkan akses folder (seperti Acode)</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
         <div class="li link" data-set="scanModels"><span>Pindai model di perangkat</span><svg class="ic chev"><use href="#i-chev"/></svg></div>
-        <div class="li link" data-set="version"><span>Versi / Cek update</span><span class="val" id="v-appVer">2.2.36</span></div>
+        <div class="li link" data-set="version"><span>Versi / Cek update</span><span class="val" id="v-appVer">2.2.40</span></div>
       </div>
     </div>
   </section>
