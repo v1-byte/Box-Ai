@@ -372,9 +372,9 @@ class Bridge(
         activity.runOnUiThread {
             activity.window.statusBarColor = Color.parseColor(if (light) "#F6F5F1" else "#08090C")
             activity.window.navigationBarColor = Color.parseColor(if (light) "#F6F5F1" else "#08090C")
-            activity.window.decorView.systemUiVisibility = if (light) {
-                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-            } else 0
+            val controller = WindowInsetsControllerCompat(activity.window, activity.window.decorView)
+            controller.isAppearanceLightStatusBars = light
+            controller.isAppearanceLightNavigationBars = light
         }
     }
 
