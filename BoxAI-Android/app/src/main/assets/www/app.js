@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ic = (n, cls = '') => `<svg class="ic ${cls}"><use href="#i-${n}"/></svg>`;
   const NATIVE = window.BoxNative || null;
-  const APP_VERSION = '2.2.41';
+  const APP_VERSION = '2.2.42';
   const RELEASES_API = 'https://api.github.com/repos/v1-byte/Box-Ai/releases/latest';
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -20,7 +20,7 @@
   const SEED_CHAT = [];
   const DEFAULTS = {
     theme: 'system', accent: 'ocean', lang: 'id', haptics: true, onDevice: true,
-    temp: 0.7, topp: 0.9, maxTok: 128, ctx: 1024,
+    temp: 0.7, topp: 0.9, maxTok: 128, ctx: 768,
     active: '', dl: {}, pal: null, pals: [],
     cache: { kv: 0, tmp: 0, thumbs: 0, logs: 0 },
     chat: SEED_CHAT, typing: false, sort: 'default', talents: { calculate: true, datetime: true, render_html: true, web_search: false }, hfToken: '', ghRepo: 'v1-byte/Box-Ai', ghToken: '', cfUrl: '', cfToken: '', r2Url: '', metaToken: '', ghPath: 'boxai/', bench: [], web: false, webAck: false, sysPrompt: 'Kamu asisten yang membantu, ringkas, dan jujur. Jawab dalam bahasa yang dipakai pengguna.'
@@ -36,6 +36,7 @@
     const recommended = NATIVE && NATIVE.recommendedContext ? Number(NATIVE.recommendedContext()) : 0;
     if (recommended >= 512) S.ctx = Math.max(512, Math.min(Number(S.ctx) || DEFAULTS.ctx, recommended));
   } catch (_) { S.ctx = Math.max(512, Math.min(Number(S.ctx) || DEFAULTS.ctx, DEFAULTS.ctx)); }
+  S.ctx = Math.max(512, Math.min(Number(S.ctx) || 768, 768));
   const SECRET_FIELDS = { hfToken: 'hf', ghToken: 'gh', cfToken: 'cf', metaToken: 'meta' };
   function loadSecureSecrets() {
     if (!NATIVE || !NATIVE.getSecret) return;
@@ -292,7 +293,7 @@
         let buf = '';
         const startedAt = Date.now();
         let statusIndex = 0;
-        const statuses = ['Menyiapkan model', 'AI sedang berpikir', 'Menyusun jawaban'];
+        const statuses = ['Menyalakan model', 'Menulis di perangkat', 'Hampir selesai'];
         const showStatus = () => live(statuses[statusIndex % statuses.length] + ' · ' + Math.floor((Date.now() - startedAt) / 1000) + ' dtk');
         showStatus();
         const statusTimer = setInterval(() => { statusIndex++; showStatus(); }, 900);
@@ -308,7 +309,8 @@
           done: () => { clearTimeout(timeout); finishStatus(); res(buf); },
           error: m => { clearTimeout(timeout); finishStatus(); rej(new Error(m)); }
         };
-          NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: msgs, temp: S.temp, top_p: S.topp, max_tokens: Math.min(Number(S.maxTok) || 128, 128), n_ctx: Math.min(Number(S.ctx) || 1024, 1024) }));
+        const recent = msgs.length > 3 ? [msgs[0]].concat(msgs.slice(-2)) : msgs;
+          NATIVE.generate(JSON.stringify({ model: meta(modelId).file, model_id: modelId, messages: recent, temp: S.temp, top_p: S.topp, max_tokens: Math.min(Number(S.maxTok) || 128, 128), n_ctx: Math.min(Number(S.ctx) || 768, 768) }));
       });
     }
   };
@@ -362,11 +364,14 @@
     try { out = await Engine.generate(msgs); } catch (e) { const r = $('#liveRow'); r && r.remove(); return pushAi('<p>Gagal membuat jawaban: ' + esc(e.message) + '</p>'); }
     const r = $('#liveRow'); r && r.remove();
     const tc = out.match(/<tool>([\s\S]*?)<\/tool>/);
-    if (tc && depth < 3) {
-      let res;
-      try { const c = JSON.parse(tc[1]); res = await runTalent(c.name, c.args); pushAi('<p class="muted-line">Talent ' + esc(c.name) + ' → ' + esc(String(res).slice(0, 200)) + '</p>', out + '\n[hasil tool: ' + res + ']'); }
-      catch (e) { pushAi('<p class="muted-line">Talent gagal: ' + esc(e.message) + '</p>', out + '\n[tool error]'); }
-      return agentTurn(depth + 1);
+    if (tc) {
+      let res = '';
+      try {
+        const c = JSON.parse(tc[1]);
+        res = String(await runTalent(c.name, c.args));
+      } catch (e) { res = e.message || 'gagal'; }
+      const visible = out.replace(tc[0], '').trim();
+      return pushAi(md(visible || res) + '<p class="muted-line">Talent lokal · ' + esc(res.slice(0, 180)) + '</p>', out);
     }
     pushAi(md(out) + (srcs.length ? '<p class="muted-line">Sumber: ' + srcs.map((x, i) => '<a href="' + esc(x.url) + '">[' + (i + 1) + '] ' + esc(x.title.slice(0, 40)) + '</a>').join(' · ') + '</p>' : ''), out);
   }
@@ -2213,13 +2218,13 @@
       <div class="resource-card"><div class="resource-head"><span>RAM terpakai</span><strong>${ramTotal ? ramUsedPct + '%' : '—'}</strong></div><div class="resource-track ram"><i style="width:${ramUsedPct}%"></i></div><small>${ramTotal ? fmtMB(ramFree / 1048576) + ' bebas / ' + fmtMB(ramTotal / 1048576) : 'Data tidak tersedia'}</small></div>
     </div>`;
     const details = thermalSnapshot.batteryTempC == null ? '' : `<p class="sub">Suhu baterai: ${Number(thermalSnapshot.batteryTempC).toFixed(1)} °C</p>`;
-    const action = status >= 4 || thermalWaiting
-      ? 'Box AI menunda permintaan baru sampai status termal membaik.'
+    const action = thermalWaiting
+      ? 'HP sangat panas. Box AI menunggu paling lama 12 detik, lalu tetap menjawab dengan beban lebih rendah.'
       : status >= 3
-        ? 'Box AI otomatis mengurangi thread CPU dan ukuran konteks pada pemuatan/generasi berikutnya.'
+        ? 'Box AI tetap menjawab. Thread dan konteks dikecilkan supaya balasan tidak makin lama.'
         : status >= 2
-          ? 'Box AI otomatis membatasi thread CPU dan konteks agar beban lebih rendah.'
-          : 'Perlindungan aktif memantau status termal Android dan menyesuaikan beban model bila perangkat mulai panas.';
+          ? 'Perangkat hangat. Inferensi tetap jalan dengan beban yang lebih ringan.'
+          : 'Perlindungan suhu hanya menunda balasan jika HP sudah darurat. Saat hangat, jawaban tetap langsung ditulis.';
     const result = await openSheet(`<div class="thermal-hero"><span class="thermal-hero-icon">${ic('cooler')}</span><div><h2>Panel performa</h2><p class="sub">${esc(statusText)}</p></div></div>${resourceCards}${details}<p>${esc(action)}</p><p class="sub">Box AI tidak dapat menghapus RAM sistem atau mematikan aplikasi lain. Tombol di bawah melepas model yang sedang dimuat oleh Box AI agar memori milik aplikasi ini dapat dikembalikan ke Android. Model akan dimuat ulang saat chat berikutnya.</p><button type="button" class="btn primary" data-memory ${S.typing || memoryActionPending ? 'disabled' : ''}>Lepaskan model dari RAM Box AI</button><button class="btn ghost" data-close>Tutup</button>`, (el, close) => $('[data-memory]', el).addEventListener('click', () => close('memory')));
     if (result === 'memory') releaseModelMemory();
   });

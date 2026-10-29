@@ -464,6 +464,22 @@ class Bridge(
         } catch (_: Exception) { deviceStats() }
     }
 
+    private fun performanceCoreCount(): Int {
+        val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+        val freqs = (0 until cpuCount).map { core ->
+            listOf(
+                "/sys/devices/system/cpu/cpu$core/cpufreq/cpuinfo_max_freq",
+                "/sys/devices/system/cpu/cpu$core/cpufreq/scaling_max_freq",
+            ).firstNotNullOfOrNull { path ->
+                runCatching { File(path).readText().trim().toLongOrNull() }.getOrNull()
+            } ?: 0L
+        }
+        val maxFreq = freqs.maxOrNull() ?: 0L
+        if (maxFreq <= 0L) return if (cpuCount <= 4) cpuCount else 4
+        val perf = freqs.count { it >= (maxFreq * 0.85).toLong() }
+        return perf.coerceIn(2, 6)
+    }
+
     private fun runtimeLimits(requestedContext: Int): RuntimeLimits {
         val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memory = ActivityManager.MemoryInfo()
@@ -471,16 +487,15 @@ class Bridge(
         val gib = 1024.0 * 1024.0 * 1024.0
         val totalGiB = memory.totalMem / gib
         val availableGiB = memory.availMem / gib
-        // 1024 is enough for chat and keeps prompt-eval short. Larger windows mostly add KV cache.
-        var maxContext = if (totalGiB < 8.0) 1024 else 2048
-        if (availableGiB < 1.0) maxContext = minOf(maxContext, 768)
+        // This build re-reads the prompt every reply. A wide KV cache mostly
+        // adds seconds before the first word.
+        var maxContext = if (totalGiB < 6.0 || availableGiB < 1.5) 512 else 768
         val thermal = thermalReading()
-        val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
-        // Threads barely change RAM. Forcing 1 thread whenever free RAM is under 3 GB
-        // made Qwen 3B slower than the 90s chat watchdog, even when the model fit.
-        var threads = if (cpuCount <= 3) cpuCount else 4
-        if (thermal.status >= 4) threads = minOf(threads, 2)
-        return RuntimeLimits(requestedContext.coerceIn(512, maxContext), threads)
+        if (thermal.status >= 3) maxContext = minOf(maxContext, 512)
+        var threads = performanceCoreCount()
+        if (thermal.status >= 3) threads = minOf(threads, 3)
+        if (thermal.status >= 5) threads = minOf(threads, 2)
+        return RuntimeLimits(requestedContext.coerceIn(256, maxContext), threads)
     }
 
     @JavascriptInterface fun recommendedContext(): Int = runtimeLimits(4096).contextSize
@@ -623,16 +638,14 @@ class Bridge(
         }
     }
 
+    /** Only pause for emergency heat. A warm phone used to block the next reply for up to 2 minutes. */
     private suspend fun awaitThermalSafe() {
-        if (thermalReading().status < 4) return
+        if (thermalReading().status < 5) return
         post("window.BoxThermal&&BoxThermal.waiting(true)")
         try {
-            val deadline = System.currentTimeMillis() + 120_000L
-            while (thermalReading().status >= 4 && System.currentTimeMillis() < deadline) {
-                delay(3_000L)
-            }
-            if (thermalReading().status >= 4) {
-                throw IllegalStateException("Perangkat masih terlalu panas. Box AI menunda inferensi untuk melindungi HP; diamkan sebentar lalu coba lagi.")
+            val deadline = System.currentTimeMillis() + 12_000L
+            while (thermalReading().status >= 5 && System.currentTimeMillis() < deadline) {
+                delay(1_000L)
             }
         } finally {
             post("window.BoxThermal&&BoxThermal.waiting(false)")
@@ -657,10 +670,9 @@ class Bridge(
                     return@launch
                 }
 
-                val nCtx = o.optInt("n_ctx", 1024).coerceIn(512, 8192)
-                // This llama-android API returns only after full completion; keep replies
-                // short on-device to reduce the time before the UI receives any text.
-                val maxTok = o.optInt("max_tokens", 128).coerceIn(32, 128)
+                val nCtx = o.optInt("n_ctx", 768).coerceIn(256, 8192)
+                // llama-android free build returns the whole reply at once (no token stream).
+                val maxTok = o.optInt("max_tokens", 96).coerceIn(32, 128)
                 val temp = o.optDouble("temp", 0.7).toFloat().coerceIn(0f, 2f)
                 val topP = o.optDouble("top_p", 0.9).toFloat().coerceIn(0f, 1f)
                 val model = loadOrReuseModel(modelFile, nCtx, temp, topP)
@@ -668,32 +680,42 @@ class Bridge(
 
                 val messages = o.optJSONArray("messages") ?: JSONArray()
                 var systemPrompt = ""
-                val userParts = mutableListOf<String>()
+                var currentUser = ""
+                var previousAssistant = ""
                 for (i in 0 until messages.length()) {
                     val m = messages.getJSONObject(i)
                     val role = m.optString("role", "")
                     val content = m.optString("content", "")
                     when (role) {
                         "system" -> systemPrompt = content
-                        "user" -> userParts.add(content)
-                        "assistant" -> userParts.add("Assistant: $content")
+                        "user" -> currentUser = content
+                        "assistant" -> previousAssistant = content
                     }
                 }
                 fun clip(s: String, n: Int) = if (s.length <= n) s else s.take(n)
-                val prompt = clip(userParts.lastOrNull() ?: "", 1800)
-                val history = if (userParts.size > 1) {
-                    userParts.dropLast(1).takeLast(2).joinToString("\n") { clip(it, 360) }
-                } else ""
-                val fullPrompt = if (history.isNotBlank()) "$history\n$prompt" else prompt
+                // Each complete() re-processes the whole prompt. Feeding old replies
+                // back in is why the second message feels much slower than the first.
+                val prompt = clip(currentUser, 1200)
+                val memory = clip(previousAssistant.trim(), 160)
+                var fullPrompt = if (memory.isNotBlank()) "Konteks singkat: $memory\n\n$prompt" else prompt
+                val modelKey = modelFile.name.lowercase()
+                if (modelKey.contains("qwen3") || modelKey.contains("deepseek") || modelKey.contains("-r1") || modelKey.contains("reasoning")) {
+                    fullPrompt += "\n/no_think"
+                }
+                val brief = "Jawab langsung dalam bahasa pengguna. Jangan menulis proses berpikir. Maksimal 4 kalimat pendek, kecuali pengguna meminta lebih panjang."
+                val system = clip(if (systemPrompt.isBlank()) brief else brief + "\n" + systemPrompt, 520)
 
                 val result = Llama.complete(
                     model,
                     prompt = fullPrompt,
-                    systemPrompt = clip(systemPrompt, 480).ifBlank { "You are Box AI, a helpful private on-device assistant. Answer briefly in the same language as the user." },
+                    systemPrompt = system.ifBlank { brief },
                     maxTokens = maxTok,
                 )
 
-                val text = result.text.trim()
+                val text = result.text
+                    .replace(Regex("(?s)<think>.*?</think>"), "")
+                    .replace(Regex("(?s)<think>.*"), "")
+                    .trim()
                 if (text.isEmpty()) {
                     post("window.BoxEngine&&BoxEngine.error('Model tidak menghasilkan jawaban')")
                     return@launch
