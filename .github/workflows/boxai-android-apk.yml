@@ -91,7 +91,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_release)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: BoxAI-v2.2.40-apk
+          name: BoxAI-v2.2.41-apk
           path: BoxAI-Android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
@@ -118,7 +118,7 @@ jobs:
             - Cooling pulse tidak menjalankan GC saat model sedang aktif
             - Panel kipas menampilkan CPU dan RAM; tersedia pelepasan model dari RAM aplikasi.
             - Tema aksen warna baru serta sinkronisasi tema dengan system bars Android.
-            - Versi aplikasi dinaikkan ke 2.2.40.
+            - Versi aplikasi dinaikkan ke 2.2.41.
 
             APK signed: **app-release.apk**. Instal sebagai pembaruan di atas Box AI yang sudah terpasang.
           fail_on_unmatched_files: true

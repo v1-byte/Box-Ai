@@ -85,13 +85,15 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.v1byte.boxai"
+    // Keep the namespace aligned with the existing Kotlin source package.
+    // The public application id remains com.v1byte.boxai.
+    namespace "com.pocketpal"
     defaultConfig {
         applicationId "com.v1byte.boxai"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 153
-        versionName "1.21.0"
+        versionCode 2241
+        versionName "2.2.41"
         ndk {
             abiFilters "arm64-v8a", "x86_64"
         }
@@ -261,4 +263,3 @@ project.ext.vectoricons = [
 ]
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
-
