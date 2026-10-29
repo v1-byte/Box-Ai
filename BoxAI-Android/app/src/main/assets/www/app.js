@@ -2128,12 +2128,17 @@
     try {
       const key = 'box_last_update_check';
       const last = +(localStorage.getItem(key) || 0);
-      if (Date.now() - last < 12 * 3600 * 1000) return;
-      localStorage.setItem(key, String(Date.now()));
+      // Retry hourly. Do not record the attempt until GitHub returns valid
+      // JSON; an offline launch must not suppress update checks for 12 hours.
+      if (Date.now() - last < 60 * 60 * 1000) return;
       if (!NATIVE) return;
-      const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
+      const r = await fetch(RELEASES_API, {
+        cache: 'no-store',
+        headers: { Accept: 'application/vnd.github+json' },
+      });
       if (!r.ok) return;
       const data = await r.json();
+      localStorage.setItem(key, String(Date.now()));
       const tag = (data.tag_name || '').replace(/^v/i, '');
       const cur = (NATIVE.appVersion && NATIVE.appVersion()) || APP_VERSION;
       if (tag && cmpVer(tag, cur) > 0) startInAppUpdate(false);
